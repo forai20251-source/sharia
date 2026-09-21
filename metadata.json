@@ -1,0 +1,6 @@
+{
+  "name": "سامانه آگهی سازمانی (دیوار)",
+  "description": "سامانه بومی و رایگان درج آگهی سازمانی شبیه دیوار با احراز هویت ویندوز و اکتیو دایرکتوری، دسته‌بندی و فیلدهای پویا، تقویم شمسی و گزارش‌گیری جامع",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
