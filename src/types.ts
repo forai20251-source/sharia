@@ -56,10 +56,12 @@ export interface Ad {
   description: string;
   categoryId: string;
   categoryTitle?: string;
-  price: number; // 0 = Free / توافقی
+  price: number; // 0 = توافقی
   isAgreementPrice: boolean; // قیمت توافقی
-  isFree: boolean; // کاملا رایگان
+  isFree?: boolean;
   isUrgent: boolean; // فوری
+  badgeRequested?: boolean; // آیا کاربر متقاضی نشان‌دار / فوری شدن آگهی بوده است
+  badgeApproved?: boolean; // آیا مدیر با نشان‌دار بودن موافقت کرده یا رد کرده (false = آگهی عادی بدون نشان)
   images: string[];
   city: string;
   departmentLocation: string; // محل فیزیکی در سازمان (e.g. ساختمان مرکزی - طبقه ۳)

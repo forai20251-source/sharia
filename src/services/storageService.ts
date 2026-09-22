@@ -284,6 +284,7 @@ class StorageService {
     const user = this.currentUser || this.users[0];
     const now = new Date();
 
+    const hasBadgeRequest = adData.badgeRequested !== undefined ? !!adData.badgeRequested : !!adData.isUrgent;
     const newAd: Ad = {
       id: `ad-${Date.now()}`,
       title: adData.title || '',
@@ -293,7 +294,9 @@ class StorageService {
       price: adData.isFree ? 0 : (adData.isAgreementPrice ? 0 : (adData.price || 0)),
       isAgreementPrice: !!adData.isAgreementPrice,
       isFree: !!adData.isFree,
-      isUrgent: !!adData.isUrgent,
+      isUrgent: hasBadgeRequest,
+      badgeRequested: hasBadgeRequest,
+      badgeApproved: undefined,
       images: adData.images && adData.images.length > 0 ? adData.images : [
         category?.defaultImage || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80'
       ],
@@ -307,7 +310,7 @@ class StorageService {
       createdAt: now.toISOString(),
       createdAtShamsi: formatJalaliDate(now, 'short'),
       expiryDateShamsi: formatJalaliDate(new Date(now.getTime() + 30 * 24 * 3600 * 1000), 'short'),
-      status: category?.allowAutoApprove ? 'APPROVED' : 'PENDING',
+      status: (category?.allowAutoApprove && !hasBadgeRequest) ? 'APPROVED' : 'PENDING',
       viewsCount: 1,
       contactViewsCount: 0,
       customFields: adData.customFields || {},
@@ -318,20 +321,86 @@ class StorageService {
 
     this.addAuditLog({
       action: 'CREATE_AD',
-      details: `ثبت آگهی جدید "${newAd.title}" با وضعیت ${newAd.status === 'APPROVED' ? 'تایید خودکار' : 'در انتظار بررسی'}`,
+      details: `ثبت آگهی جدید "${newAd.title}" ${hasBadgeRequest ? '(با درخواست نشان‌دار فوری) ' : ''}با وضعیت ${newAd.status === 'APPROVED' ? 'تایید خودکار' : 'در انتظار بررسی مدیر'}`,
       status: 'SUCCESS',
     });
 
     return newAd;
   }
 
-  updateAdStatus(id: string, status: AdStatus, reason?: string): void {
+  updateAd(id: string, updates: Partial<Ad>, byUser?: string): Ad | undefined {
+    let updatedAd: Ad | undefined;
     const user = this.getCurrentUser();
+    const modifierName = byUser || user.displayName;
     this.ads = this.ads.map(ad => {
       if (ad.id === id) {
+        const category = updates.categoryId
+          ? this.categories.find(c => c.id === updates.categoryId)
+          : this.categories.find(c => c.id === ad.categoryId);
+
+        updatedAd = {
+          ...ad,
+          ...updates,
+          categoryTitle: category?.title || ad.categoryTitle,
+          reviewedBy: updates.status && updates.status !== ad.status ? modifierName : ad.reviewedBy,
+          reviewedAt: updates.status && updates.status !== ad.status ? new Date().toISOString() : ad.reviewedAt,
+        };
+        return updatedAd;
+      }
+      return ad;
+    });
+
+    if (updatedAd) {
+      setToStorage(STORAGE_KEYS.ADS, this.ads);
+      const statusLabel =
+        updatedAd.status === 'APPROVED'
+          ? 'تایید شده'
+          : updatedAd.status === 'PENDING'
+          ? 'در انتظار بررسی'
+          : 'رد شده';
+      this.addAuditLog({
+        action: 'UPDATE_AD',
+        details: `ویرایش مشخصات آگهی "${updatedAd.title}" (وضعیت: ${statusLabel}) توسط مدیر ${modifierName}`,
+        status: 'SUCCESS',
+      });
+    }
+
+    return updatedAd;
+  }
+
+  updateAdStatus(
+    id: string,
+    status: AdStatus,
+    reason?: string,
+    options?: { keepBadge?: boolean }
+  ): void {
+    const user = this.getCurrentUser();
+    let adTitle = id;
+    let badgeOutcomeText = '';
+
+    this.ads = this.ads.map(ad => {
+      if (ad.id === id) {
+        adTitle = ad.title;
+        let isUrgent = ad.isUrgent;
+        let badgeApproved = ad.badgeApproved;
+
+        if (status === 'APPROVED') {
+          if (options?.keepBadge !== undefined) {
+            isUrgent = options.keepBadge;
+            badgeApproved = options.keepBadge;
+            badgeOutcomeText = options.keepBadge
+              ? 'همراه با تایید نشان فوری'
+              : 'به عنوان آگهی عادی و بدون نشان فوری (رد نشان‌دار بودن)';
+          } else {
+            badgeApproved = ad.isUrgent;
+          }
+        }
+
         return {
           ...ad,
           status,
+          isUrgent,
+          badgeApproved,
           rejectionReason: reason || ad.rejectionReason,
           reviewedBy: user.displayName,
           reviewedAt: new Date().toISOString(),
@@ -342,9 +411,18 @@ class StorageService {
     setToStorage(STORAGE_KEYS.ADS, this.ads);
 
     const action = status === 'APPROVED' ? 'APPROVE_AD' : (status === 'REJECTED' ? 'REJECT_AD' : 'UPDATE_AD');
+    let details = `${status === 'APPROVED' ? 'تایید' : 'رد'} آگهی "${adTitle}"`;
+    if (badgeOutcomeText) {
+      details += ` (${badgeOutcomeText})`;
+    }
+    if (reason) {
+      details += ` به علت: ${reason}`;
+    }
+    details += ` توسط مدیر ${user.displayName}`;
+
     this.addAuditLog({
       action,
-      details: `${status === 'APPROVED' ? 'تایید' : 'رد'} آگهی با شناسه ${id}${reason ? ` به علت: ${reason}` : ''}`,
+      details,
       status: 'SUCCESS',
     });
   }

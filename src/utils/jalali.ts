@@ -10,6 +10,12 @@ export function toPersianDigits(n: number | string | undefined | null): string {
   return str.replace(/\d/g, (digit) => persianDigits[parseInt(digit, 10)]);
 }
 
+// Pad numbers with leading zeros and convert all digits to Persian
+export function padPersianDigits(n: number | string, width = 2): string {
+  const englishPadded = String(n).padStart(width, '0');
+  return toPersianDigits(englishPadded);
+}
+
 // Convert Persian or Arabic digits to English
 export function toEnglishDigits(str: string): string {
   if (!str) return '';
@@ -29,8 +35,7 @@ export function formatPersianNumber(n: number | string | undefined | null): stri
 }
 
 // Format price in Toman
-export function formatPrice(price: number, isAgreement = false, isFree = false): string {
-  if (isFree) return 'رایگان';
+export function formatPrice(price: number, isAgreement = false, _isFree = false): string {
   if (isAgreement || price === 0) return 'توافقی';
   return `${formatPersianNumber(price)} تومان`;
 }
@@ -116,8 +121,8 @@ export function formatJalaliDate(dateInput: Date | string | number, format: 'sho
   const [jy, jm, jd] = gregorianToJalali(d.getFullYear(), d.getMonth() + 1, d.getDate());
 
   if (format === 'short') {
-    const sm = jm < 10 ? `۰${jm}` : toPersianDigits(jm);
-    const sd = jd < 10 ? `۰${jd}` : toPersianDigits(jd);
+    const sm = padPersianDigits(jm, 2);
+    const sd = padPersianDigits(jd, 2);
     return `${toPersianDigits(jy)}/${sm}/${sd}`;
   }
 
@@ -186,4 +191,40 @@ export function getDaysInJalaliMonth(year: number, month: number): number {
   let leap = ((((n + 1) % 33) - 1) % 4);
   if (leap === -1) leap = 4;
   return leap === 0 ? 30 : 29;
+}
+
+// Calculate Jalali date with an offset in days from today
+export function getJalaliDateFromNow(daysFromNow: number): {
+  year: number;
+  month: number;
+  day: number;
+  monthName: string;
+  formattedShort: string;
+  formattedLong: string;
+} {
+  const target = new Date();
+  target.setDate(target.getDate() + daysFromNow);
+  const [jy, jm, jd] = gregorianToJalali(target.getFullYear(), target.getMonth() + 1, target.getDate());
+  const sm = padPersianDigits(jm, 2);
+  const sd = padPersianDigits(jd, 2);
+  return {
+    year: jy,
+    month: jm,
+    day: jd,
+    monthName: PERSIAN_MONTH_NAMES[jm - 1],
+    formattedShort: `${toPersianDigits(jy)}/${sm}/${sd}`,
+    formattedLong: `${toPersianDigits(jd)} ${PERSIAN_MONTH_NAMES[jm - 1]} ${toPersianDigits(jy)}`,
+  };
+}
+
+// Compare two Jalali dates: returns -1 if date1 < date2, 0 if equal, 1 if date1 > date2
+export function compareJalaliDates(
+  d1: { year: number; month: number; day: number },
+  d2: { year: number; month: number; day: number }
+): number {
+  const val1 = d1.year * 10000 + d1.month * 100 + d1.day;
+  const val2 = d2.year * 10000 + d2.month * 100 + d2.day;
+  if (val1 < val2) return -1;
+  if (val1 > val2) return 1;
+  return 0;
 }

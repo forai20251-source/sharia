@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   X,
   Plus,
@@ -9,6 +9,7 @@ import {
   DollarSign,
   Flame,
   AlertCircle,
+  AlertTriangle,
   Building,
   Layers,
   ArrowRight,
@@ -17,13 +18,20 @@ import {
 } from 'lucide-react';
 import { Category, Ad, User } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
-import { getCurrentJalali, toPersianDigits, formatPersianNumber } from '../utils/jalali';
+import { getCurrentJalali, toPersianDigits, formatPersianNumber, getJalaliDateFromNow } from '../utils/jalali';
 
 interface PostAdModalProps {
   categories: Category[];
   currentUser: User;
   onClose: () => void;
   onSubmitAd: (adData: Partial<Ad>) => void;
+}
+
+interface ValidationError {
+  step: 1 | 2 | 3;
+  field: string;
+  label: string;
+  message: string;
 }
 
 const PRESET_IMAGE_OPTIONS = [
@@ -59,13 +67,133 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
   const [expiryDateShamsi, setExpiryDateShamsi] = useState('');
 
+  const modalContentRef = useRef<HTMLFormElement>(null);
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [showValidationAlert, setShowValidationAlert] = useState(false);
+
   const currentCategory = categories.find(c => c.id === categoryId);
+
+  const getFieldError = (fieldName: string): string | undefined => {
+    return validationErrors.find(e => e.field === fieldName)?.message;
+  };
+
+  const clearError = (fieldName: string) => {
+    setValidationErrors(prev => {
+      const next = prev.filter(e => e.field !== fieldName);
+      if (next.length === 0) setShowValidationAlert(false);
+      return next;
+    });
+  };
+
+  const hasStepErrors = (stepNumber: 1 | 2 | 3) => {
+    return validationErrors.some(e => e.step === stepNumber);
+  };
+
+  const validateStep = (stepNumber: 1 | 2 | 3): ValidationError[] => {
+    const errs: ValidationError[] = [];
+
+    if (stepNumber === 1) {
+      if (!categoryId) {
+        errs.push({
+          step: 1,
+          field: 'categoryId',
+          label: 'دسته‌بندی آگهی',
+          message: 'انتخاب یک دسته‌بندی برای آگهی الزامی است.',
+        });
+      }
+
+      if (!title.trim()) {
+        errs.push({
+          step: 1,
+          field: 'title',
+          label: 'عنوان آگهی',
+          message: 'وارد کردن عنوان آگهی الزامی است.',
+        });
+      } else if (title.trim().length < 3) {
+        errs.push({
+          step: 1,
+          field: 'title',
+          label: 'عنوان آگهی',
+          message: 'عنوان آگهی باید حداقل ۳ حرف باشد.',
+        });
+      }
+
+      if (!description.trim()) {
+        errs.push({
+          step: 1,
+          field: 'description',
+          label: 'توضیحات تکمیلی',
+          message: 'ثبت جزییات و توضیحات کالا یا خدمت الزامی است.',
+        });
+      }
+    }
+
+    if (stepNumber === 2) {
+      if (currentCategory && currentCategory.fields.length > 0) {
+        currentCategory.fields.forEach(field => {
+          if (field.required) {
+            const val = customFields[field.name];
+            if (val === undefined || val === null || val === '') {
+              errs.push({
+                step: 2,
+                field: field.name,
+                label: field.label,
+                message: `تکمیل مشخصه «${field.label}» برای دسته ${currentCategory.title} الزامی است.`,
+              });
+            }
+          }
+        });
+      }
+    }
+
+    if (stepNumber === 3) {
+      if (!isAgreementPrice && (!price || price <= 0)) {
+        errs.push({
+          step: 3,
+          field: 'price',
+          label: 'تعیین قیمت',
+          message: 'لطفاً مبلغ پیشنهادی را وارد کنید یا گزینه «توافقی با همکار» را برگزینید.',
+        });
+      }
+    }
+
+    return errs;
+  };
+
+  const validateAllSteps = (): ValidationError[] => {
+    return [...validateStep(1), ...validateStep(2), ...validateStep(3)];
+  };
+
+  const handleProceedToStep2 = () => {
+    const errs = validateStep(1);
+    if (errs.length > 0) {
+      setValidationErrors(errs);
+      setShowValidationAlert(true);
+      modalContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    setValidationErrors(prev => prev.filter(e => e.step !== 1));
+    setStep(2);
+  };
+
+  const handleProceedToStep3 = () => {
+    const errs = validateStep(2);
+    if (errs.length > 0) {
+      setValidationErrors(errs);
+      setShowValidationAlert(true);
+      modalContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    setValidationErrors(prev => prev.filter(e => e.step !== 2));
+    setStep(3);
+  };
 
   const handleCustomFieldChange = (fieldName: string, value: any) => {
     setCustomFields(prev => ({
       ...prev,
       [fieldName]: value,
     }));
+    clearError(fieldName);
   };
 
   const handleAddPresetImage = (url: string) => {
@@ -94,27 +222,32 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) {
-      alert('لطفاً عنوان آگهی را وارد نمایید.');
+    const allErrors = validateAllSteps();
+    if (allErrors.length > 0) {
+      setValidationErrors(allErrors);
+      setShowValidationAlert(true);
+      setStep(allErrors[0].step);
+      modalContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
     onSubmitAd({
-      title,
+      title: title.trim(),
       categoryId,
       categoryTitle: currentCategory?.title,
-      description,
-      isFree,
+      description: description.trim(),
+      isFree: false,
       isAgreementPrice,
-      price: isFree || isAgreementPrice ? 0 : price,
+      price: isAgreementPrice ? 0 : price,
       isUrgent,
-      departmentLocation,
-      authorPhone,
+      badgeRequested: isUrgent,
+      departmentLocation: departmentLocation.trim(),
+      authorPhone: authorPhone.trim(),
       images: selectedImages.length > 0
         ? selectedImages
         : (currentCategory?.defaultImage ? [currentCategory.defaultImage] : [PRESET_IMAGE_OPTIONS[0].url]),
       customFields,
-      expiryDateShamsi: expiryDateShamsi || '۱۴۰۳/۰۸/۳۰',
+      expiryDateShamsi: expiryDateShamsi || getJalaliDateFromNow(30).formattedShort,
     });
 
     onClose();
@@ -126,16 +259,18 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
       <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs" onClick={onClose} />
 
       {/* Modal Box */}
-      <div className="relative bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto z-10 animate-in fade-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-md px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-sm">
+      <div
+        className="relative bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] sm:max-h-[85vh] flex flex-col z-10 animate-in fade-in zoom-in-95 duration-200 overflow-hidden border border-slate-100"
+      >
+        {/* Header - Pinned */}
+        <div className="shrink-0 bg-white px-6 py-4 border-b border-slate-100 flex items-center justify-between z-10">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
               +
             </div>
             <div>
-              <h2 className="font-extrabold text-base text-slate-900">ثبت آگهی رایگان سازمانی</h2>
-              <p className="text-[11px] text-slate-500">بدون هزینه و کارمزد در بستر شبکه داخلی سازمان</p>
+              <h2 className="font-extrabold text-base text-slate-900">ثبت آگهی سازمانی</h2>
+              <p className="text-[11px] text-slate-500">در بستر امن شبکه داخلی سازمان</p>
             </div>
           </div>
           <button
@@ -147,49 +282,140 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
           </button>
         </div>
 
-        {/* Step Wizard Indicator */}
-        <div className="px-6 pt-4 pb-2">
+        {/* Step Wizard Indicator - Pinned */}
+        <div className="shrink-0 px-6 py-3 bg-slate-50/70 border-b border-slate-100 z-10">
           <div className="flex items-center justify-between relative">
-            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-100 -translate-y-1/2 z-0" />
+            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200/80 -translate-y-1/2 z-0" />
             <button
               type="button"
               onClick={() => setStep(1)}
               className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                step === 1 ? 'bg-rose-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                step === 1 ? 'bg-rose-600 text-white shadow-xs' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/60'
               }`}
             >
               <span>۱. مشخصات پایه و دسته</span>
+              {hasStepErrors(1) && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-white animate-pulse" />
+              )}
             </button>
             <button
               type="button"
               onClick={() => setStep(2)}
               className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                step === 2 ? 'bg-rose-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                step === 2 ? 'bg-rose-600 text-white shadow-xs' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/60'
               }`}
             >
               <span>۲. ویژگی‌های اختصاصی دسته</span>
+              {hasStepErrors(2) && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-white animate-pulse" />
+              )}
             </button>
             <button
               type="button"
               onClick={() => setStep(3)}
               className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                step === 3 ? 'bg-rose-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                step === 3 ? 'bg-rose-600 text-white shadow-xs' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/60'
               }`}
             >
               <span>۳. تصاویر و قیمت‌گذاری</span>
+              {hasStepErrors(3) && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-white animate-pulse" />
+              )}
             </button>
           </div>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        {/* Scrollable Form Body */}
+        <form
+          id="post-ad-form"
+          noValidate
+          onSubmit={handleSubmit}
+          ref={modalContentRef}
+          className="flex-1 overflow-y-auto px-6 py-5 pb-8 space-y-6 custom-scrollbar scroll-smooth overscroll-contain"
+        >
+          {/* STYLISH VALIDATION ALERT BANNER */}
+          {showValidationAlert && validationErrors.length > 0 && (
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-50 via-amber-50/60 to-rose-50/30 border-2 border-rose-200/90 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-rose-600/25">
+                    <AlertTriangle className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-sm text-slate-900">
+                        فیلدهای ضروری آگهی کامل نشده است
+                      </h3>
+                      <span className="text-[11px] font-bold bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">
+                        {toPersianDigits(validationErrors.length)} مورد نیازمند تکمیل
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      برای ثبت آگهی در شبکه سازمانی، موارد ستاره‌دار زیر را بررسی و تکمیل نمایید. با کلیک بر روی هر مورد، مستقیماً به مرحله مربوطه هدایت می‌شوید:
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowValidationAlert(false)}
+                  className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-white/80 transition shrink-0"
+                  title="بستن هشدار"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Error cards list */}
+              <div className="mt-3.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {validationErrors.map((err, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setStep(err.step);
+                    }}
+                    className={`flex items-center justify-between p-2.5 rounded-xl border text-right transition shadow-2xs group ${
+                      step === err.step
+                        ? 'bg-rose-100/70 border-rose-300 ring-2 ring-rose-400/20'
+                        : 'bg-white/95 hover:bg-white border-rose-200/70 hover:border-rose-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${
+                        step === err.step
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        مرحله {toPersianDigits(err.step)}
+                      </span>
+                      <div className="truncate">
+                        <span className="font-bold text-xs text-slate-800 ml-1">{err.label}:</span>
+                        <span className="text-[11px] text-slate-500 truncate block sm:inline">{err.message}</span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-rose-600 font-bold group-hover:translate-x-[-2px] transition shrink-0 mr-2 flex items-center gap-0.5">
+                      <span>تکمیل</span>
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* STEP 1: Basic Info */}
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in duration-150">
               {/* Category selector */}
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  انتخاب دسته‌بندی <span className="text-rose-600">*</span>
+                <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                  <span>انتخاب دسته‌بندی <span className="text-rose-600">*</span></span>
+                  {getFieldError('categoryId') && (
+                    <span className="text-rose-600 text-[11px] font-semibold flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {getFieldError('categoryId')}
+                    </span>
+                  )}
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {categories.map(cat => (
@@ -199,6 +425,7 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                       onClick={() => {
                         setCategoryId(cat.id);
                         setCustomFields({}); // Reset custom fields when changing category
+                        clearError('categoryId');
                       }}
                       className={`p-3 rounded-2xl border text-right transition flex flex-col justify-between ${
                         categoryId === cat.id
@@ -215,16 +442,28 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
 
               {/* Title */}
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  عنوان آگهی <span className="text-rose-600">*</span>
+                <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                  <span>عنوان آگهی <span className="text-rose-600">*</span></span>
+                  {getFieldError('title') && (
+                    <span className="text-rose-600 text-[11px] font-semibold flex items-center gap-1 animate-in fade-in">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {getFieldError('title')}
+                    </span>
+                  )}
                 </label>
                 <input
                   type="text"
                   value={title}
-                  onChange={e => setTitle(e.target.value)}
+                  onChange={e => {
+                    setTitle(e.target.value);
+                    clearError('title');
+                  }}
                   placeholder="مثال: پژو ۲۰۷i مدل ۱۴۰۲ سفید ارتقا یافته، یا آپارتمان ۹۵ متری"
-                  required
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 focus:bg-white transition"
+                  className={`w-full rounded-xl px-3.5 py-2.5 text-sm outline-none transition ${
+                    getFieldError('title')
+                      ? 'border-2 border-rose-400 bg-rose-50/30 text-rose-950 focus:ring-2 focus:ring-rose-500/20'
+                      : 'border border-slate-200 bg-slate-50 text-slate-900 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 focus:bg-white'
+                  }`}
                 />
                 <span className="text-[11px] text-slate-400 mt-1 block">
                   در عنوان آگهی به موارد مهم مانند برند، مدل یا مشخصه اصلی اشاره کنید.
@@ -233,15 +472,28 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
 
               {/* Description */}
               <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  توضیحات تکمیلی آگهی <span className="text-rose-600">*</span>
+                <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                  <span>توضیحات تکمیلی آگهی <span className="text-rose-600">*</span></span>
+                  {getFieldError('description') && (
+                    <span className="text-rose-600 text-[11px] font-semibold flex items-center gap-1 animate-in fade-in">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {getFieldError('description')}
+                    </span>
+                  )}
                 </label>
                 <textarea
                   rows={4}
                   value={description}
-                  onChange={e => setDescription(e.target.value)}
+                  onChange={e => {
+                    setDescription(e.target.value);
+                    clearError('description');
+                  }}
                   placeholder="جزییات و شرایط کالا یا خدمت، ساعت‌های پاسخگویی، وضعیت و نحوه تحویل حضوری در سازمان..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 focus:bg-white transition"
+                  className={`w-full rounded-xl p-3 text-sm outline-none transition ${
+                    getFieldError('description')
+                      ? 'border-2 border-rose-400 bg-rose-50/30 text-rose-950 focus:ring-2 focus:ring-rose-500/20'
+                      : 'border border-slate-200 bg-slate-50 text-slate-900 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 focus:bg-white'
+                  }`}
                 />
               </div>
 
@@ -272,17 +524,6 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                   />
                 </div>
               </div>
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => setStep(2)}
-                  className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs"
-                >
-                  <span>مرحله بعد: ویژگی‌های دسته</span>
-                  <ArrowLeft className="w-4 h-4" />
-                </button>
-              </div>
             </div>
           )}
 
@@ -303,18 +544,30 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                   {currentCategory.fields.map(field => {
                     const value = customFields[field.name];
+                    const error = getFieldError(field.name);
 
                     if (field.type === 'select') {
                       return (
                         <div key={field.id}>
-                          <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                            {field.label} {field.required && <span className="text-rose-600">*</span>}
+                          <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                            <span>
+                              {field.label} {field.required && <span className="text-rose-600">*</span>}
+                            </span>
+                            {error && (
+                              <span className="text-rose-600 text-[10px] font-semibold flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" />
+                                الزامی
+                              </span>
+                            )}
                           </label>
                           <select
                             value={value || ''}
                             onChange={e => handleCustomFieldChange(field.name, e.target.value)}
-                            required={field.required}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                            className={`w-full rounded-xl px-3 py-2 text-xs text-slate-800 outline-none transition ${
+                              error
+                                ? 'border-2 border-rose-400 bg-rose-50/30 focus:ring-2 focus:ring-rose-500/20'
+                                : 'border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500'
+                            }`}
                           >
                             <option value="">انتخاب کنید...</option>
                             {field.options?.map(opt => (
@@ -323,6 +576,11 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                               </option>
                             ))}
                           </select>
+                          {error && (
+                            <span className="text-[11px] text-rose-600 mt-1 block font-medium">
+                              {error}
+                            </span>
+                          )}
                         </div>
                       );
                     }
@@ -349,17 +607,33 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                     if (field.type === 'number' || field.type === 'price') {
                       return (
                         <div key={field.id}>
-                          <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                            {field.label} {field.unit ? `(${field.unit})` : ''} {field.required && <span className="text-rose-600">*</span>}
+                          <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                            <span>
+                              {field.label} {field.unit ? `(${field.unit})` : ''} {field.required && <span className="text-rose-600">*</span>}
+                            </span>
+                            {error && (
+                              <span className="text-rose-600 text-[10px] font-semibold flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" />
+                                الزامی
+                              </span>
+                            )}
                           </label>
                           <input
                             type="number"
                             value={value ?? ''}
                             onChange={e => handleCustomFieldChange(field.name, e.target.value ? Number(e.target.value) : '')}
                             placeholder={field.placeholder || `مقدار عددی به ${field.unit || 'واحد'}`}
-                            required={field.required}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                            className={`w-full rounded-xl px-3 py-2 text-xs text-slate-800 outline-none transition ${
+                              error
+                                ? 'border-2 border-rose-400 bg-rose-50/30 focus:ring-2 focus:ring-rose-500/20'
+                                : 'border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500'
+                            }`}
                           />
+                          {error && (
+                            <span className="text-[11px] text-rose-600 mt-1 block font-medium">
+                              {error}
+                            </span>
+                          )}
                         </div>
                       );
                     }
@@ -367,17 +641,33 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                     // Text
                     return (
                       <div key={field.id}>
-                        <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                          {field.label} {field.required && <span className="text-rose-600">*</span>}
+                        <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                          <span>
+                            {field.label} {field.required && <span className="text-rose-600">*</span>}
+                          </span>
+                          {error && (
+                            <span className="text-rose-600 text-[10px] font-semibold flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" />
+                              الزامی
+                            </span>
+                          )}
                         </label>
                         <input
                           type="text"
                           value={value || ''}
                           onChange={e => handleCustomFieldChange(field.name, e.target.value)}
                           placeholder={field.placeholder || `وارد نمایید...`}
-                          required={field.required}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                          className={`w-full rounded-xl px-3 py-2 text-xs text-slate-800 outline-none transition ${
+                            error
+                              ? 'border-2 border-rose-400 bg-rose-50/30 focus:ring-2 focus:ring-rose-500/20'
+                              : 'border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500'
+                          }`}
                         />
+                        {error && (
+                          <span className="text-[11px] text-rose-600 mt-1 block font-medium">
+                            {error}
+                          </span>
+                        )}
                       </div>
                     );
                   })}
@@ -387,25 +677,6 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                   برای این دسته‌بندی فیلد اختصاصی ویژه‌ای تعریف نشده است.
                 </div>
               )}
-
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="flex items-center gap-1 text-slate-600 hover:text-slate-800 text-xs font-medium px-4 py-2 rounded-xl transition"
-                >
-                  <ArrowRight className="w-4 h-4" />
-                  <span>مرحله قبل</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep(3)}
-                  className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs"
-                >
-                  <span>مرحله بعد: تصاویر و قیمت</span>
-                  <ArrowLeft className="w-4 h-4" />
-                </button>
-              </div>
             </div>
           )}
 
@@ -484,11 +755,15 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
               </div>
 
               {/* Pricing */}
-              <div className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+              <div className={`space-y-3 p-4 rounded-2xl transition ${
+                getFieldError('price')
+                  ? 'bg-rose-50/50 border-2 border-rose-300 ring-2 ring-rose-500/10'
+                  : 'bg-slate-50 border border-slate-200'
+              }`}>
                 <div className="text-xs font-bold text-slate-800 flex items-center justify-between">
-                  <span>تعیین قیمت پیشنهادی</span>
-                  <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                    بدون درگاه پرداخت و کاملاً رایگان
+                  <span>تعیین قیمت پیشنهادی <span className="text-rose-600">*</span></span>
+                  <span className="text-[11px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                    توافق مستقیم بین همکاران
                   </span>
                 </div>
 
@@ -496,15 +771,15 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setIsFree(true);
                       setIsAgreementPrice(false);
-                      setPrice(0);
+                      setIsFree(false);
+                      clearError('price');
                     }}
                     className={`py-2 rounded-xl text-xs font-bold border transition ${
-                      isFree ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-200'
+                      !isAgreementPrice ? 'bg-rose-600 text-white border-rose-600 shadow-2xs' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    رایگان / هدیه سازمانی
+                    تعیین مبلغ (تومان)
                   </button>
                   <button
                     type="button"
@@ -512,32 +787,47 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                       setIsAgreementPrice(true);
                       setIsFree(false);
                       setPrice(0);
+                      clearError('price');
                     }}
                     className={`py-2 rounded-xl text-xs font-bold border transition ${
-                      isAgreementPrice ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-200'
+                      isAgreementPrice ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     توافقی با همکار
                   </button>
                 </div>
 
-                {!isFree && !isAgreementPrice && (
+                {!isAgreementPrice && (
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      قیمت به تومان
+                      قیمت به تومان <span className="text-rose-600">*</span>
                     </label>
                     <input
                       type="number"
                       value={price || ''}
-                      onChange={e => setPrice(Number(e.target.value))}
+                      onChange={e => {
+                        setPrice(Number(e.target.value));
+                        clearError('price');
+                      }}
                       placeholder="مثال: ۱۵۰۰۰۰۰۰"
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                      className={`w-full rounded-xl px-3 py-2 text-xs text-slate-800 outline-none transition ${
+                        getFieldError('price')
+                          ? 'border-2 border-rose-400 bg-white ring-2 ring-rose-500/20'
+                          : 'bg-white border border-slate-200 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500'
+                      }`}
                     />
                     {price > 0 && (
                       <span className="text-[11px] text-slate-500 mt-1 block">
                         معادل: {formatPersianNumber(price)} تومان
                       </span>
                     )}
+                  </div>
+                )}
+
+                {getFieldError('price') && (
+                  <div className="flex items-center gap-1.5 text-xs text-rose-700 font-semibold p-2 bg-rose-100/60 rounded-xl border border-rose-200 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>{getFieldError('price')}</span>
                   </div>
                 )}
               </div>
@@ -547,8 +837,11 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                 <JalaliDatePicker
                   value={expiryDateShamsi}
                   onChange={setExpiryDateShamsi}
-                  label="مدت اعتبار و تاریخ انقضای آگهی به شمسی (اختیاری)"
-                  placeholder="پیش‌فرض: ۳۰ روز آینده"
+                  label="مدت اعتبار و تاریخ انقضای آگهی به شمسی"
+                  placeholder={`پیش‌فرض: ۳۰ روز آینده (${getJalaliDateFromNow(30).formattedShort})`}
+                  maxDaysFromNow={30}
+                  minDateToday={true}
+                  placement="top"
                 />
               </div>
 
@@ -571,27 +864,85 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                 />
               </label>
 
-              {/* Final submission buttons */}
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setStep(2)}
-                  className="flex items-center gap-1 text-slate-600 hover:text-slate-800 text-xs font-medium px-4 py-2 rounded-xl transition"
-                >
-                  <ArrowRight className="w-4 h-4" />
-                  <span>مرحله قبل</span>
-                </button>
-                <button
-                  type="submit"
-                  className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold px-6 py-2.5 rounded-xl shadow-md hover:shadow-lg transition active:scale-95"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>ثبت نهایی آگهی</span>
-                </button>
-              </div>
+              {/* Warning note if previous steps have errors */}
+              {showValidationAlert && validationErrors.some(e => e.step !== 3) && (
+                <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 text-xs text-amber-900 animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      {toPersianDigits(validationErrors.filter(e => e.step !== 3).length)} فیلد در مراحل قبلی هنوز کامل نشده است.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const firstPrevious = validationErrors.find(e => e.step !== 3);
+                      if (firstPrevious) setStep(firstPrevious.step);
+                    }}
+                    className="text-amber-800 font-bold bg-amber-100 hover:bg-amber-200 px-3 py-1 rounded-lg transition"
+                  >
+                    رفتن به مرحله قبل جهت ویرایش
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </form>
+
+        {/* Pinned Footer Action Bar */}
+        <div className="shrink-0 px-6 py-3.5 bg-white border-t border-slate-100 flex items-center justify-between gap-3 shadow-[0_-4px_16px_rgba(0,0,0,0.03)] z-20">
+          {step > 1 ? (
+            <button
+              type="button"
+              onClick={() => setStep((step - 1) as 1 | 2)}
+              className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 text-xs font-bold px-4 py-2.5 rounded-xl transition active:scale-95"
+            >
+              <ArrowRight className="w-4 h-4" />
+              <span>مرحله قبل</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 text-xs font-medium px-3 py-2 rounded-xl transition"
+            >
+              انصراف
+            </button>
+          )}
+
+          {step === 1 && (
+            <button
+              type="button"
+              onClick={handleProceedToStep2}
+              className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs active:scale-95"
+            >
+              <span>مرحله بعد: ویژگی‌های دسته</span>
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+
+          {step === 2 && (
+            <button
+              type="button"
+              onClick={handleProceedToStep3}
+              className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs active:scale-95"
+            >
+              <span>مرحله بعد: تصاویر و قیمت</span>
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+
+          {step === 3 && (
+            <button
+              type="submit"
+              form="post-ad-form"
+              className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold px-6 py-2.5 rounded-xl shadow-md hover:shadow-lg transition active:scale-95"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>ثبت نهایی آگهی</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

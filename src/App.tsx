@@ -26,7 +26,6 @@ import {
 } from './types';
 import { storageService } from './services/storageService';
 import { Navbar } from './components/Navbar';
-import { CategoryBar } from './components/CategoryBar';
 import { FilterSidebar } from './components/FilterSidebar';
 import { AdCard } from './components/AdCard';
 import { AdDetailModal } from './components/AdDetailModal';
@@ -108,11 +107,20 @@ export default function App() {
     refreshData();
   };
 
-  const handleApproveAd = (adId: string) => {
-    storageService.updateAdStatus(adId, 'APPROVED');
+  const handleApproveAd = (adId: string, keepBadge: boolean = true) => {
+    storageService.updateAdStatus(adId, 'APPROVED', undefined, { keepBadge });
     refreshData();
     if (activeAdDetail && activeAdDetail.id === adId) {
-      setActiveAdDetail(prev => prev ? { ...prev, status: 'APPROVED' } : null);
+      setActiveAdDetail(prev =>
+        prev
+          ? {
+              ...prev,
+              status: 'APPROVED',
+              isUrgent: keepBadge,
+              badgeApproved: keepBadge,
+            }
+          : null
+      );
     }
   };
 
@@ -129,6 +137,14 @@ export default function App() {
     refreshData();
     if (activeAdDetail && activeAdDetail.id === adId) {
       setActiveAdDetail(null);
+    }
+  };
+
+  const handleUpdateAd = (adId: string, updates: Partial<Ad>) => {
+    storageService.updateAd(adId, updates, currentUser.username);
+    refreshData();
+    if (activeAdDetail && activeAdDetail.id === adId) {
+      setActiveAdDetail(prev => (prev ? { ...prev, ...updates } : null));
     }
   };
 
@@ -218,8 +234,8 @@ export default function App() {
         // loose match
       }
 
-      // Only Free
-      if (filters.onlyFree && !ad.isFree && ad.price > 0) {
+      // Only Agreement Price
+      if (filters.onlyFree && !ad.isAgreementPrice && ad.price > 0) {
         return false;
       }
 
@@ -280,7 +296,7 @@ export default function App() {
             <span className="font-semibold text-white">سامانه آگهی‌های سازمانی (دیوار بومی)</span>
             <span className="hidden md:inline text-slate-400">|</span>
             <span className="hidden md:inline text-slate-300">
-              احراز هویت متمرکز با اکتیو دایرکتوری ویندوز ({adConfig.domainName}\) • بدون درگاه پرداخت و کاملاً رایگان
+              احراز هویت متمرکز با اکتیو دایرکتوری ویندوز ({adConfig.domainName}\) • بدون واسطه و ویژه همکاران سازمان
             </span>
           </div>
 
@@ -313,14 +329,6 @@ export default function App() {
         onSearchChange={q => handleFilterChange({ searchQuery: q })}
         selectedBranch={selectedBranch}
         onBranchChange={b => setSelectedBranch(b)}
-      />
-
-      {/* Category Horizontal Bar */}
-      <CategoryBar
-        categories={categories}
-        selectedCategoryId={filters.categoryId}
-        onSelectCategory={catId => handleFilterChange({ categoryId: catId, customFieldFilters: {} })}
-        ads={ads}
       />
 
       {/* Main Content Layout */}
@@ -500,6 +508,7 @@ export default function App() {
         <AdDetailModal
           ad={activeAdDetail}
           category={categories.find(c => c.id === activeAdDetail.categoryId)}
+          categories={categories}
           currentUser={currentUser}
           isBookmarked={bookmarks.includes(activeAdDetail.id)}
           onClose={() => setActiveAdDetail(null)}
@@ -507,6 +516,7 @@ export default function App() {
           onApproveAd={handleApproveAd}
           onRejectAd={handleRejectAd}
           onDeleteAd={handleDeleteAd}
+          onUpdateAd={handleUpdateAd}
           onContactView={handleContactView}
         />
       )}
@@ -563,6 +573,7 @@ export default function App() {
           onSaveADConfig={handleSaveADConfig}
           onTestADConnection={() => storageService.testActiveDirectoryConnection()}
           onTestMySQLConnection={() => storageService.testMySQLConnection()}
+          onUpdateAd={handleUpdateAd}
         />
       )}
     </div>

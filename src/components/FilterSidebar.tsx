@@ -144,7 +144,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
         <label className="flex items-center justify-between p-2 rounded-xl bg-slate-50 hover:bg-slate-100/70 border border-slate-100 cursor-pointer transition">
           <div className="flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-emerald-600" />
-            <span className="text-xs font-medium text-slate-800">فقط آگهی‌های رایگان (واهداء)</span>
+            <span className="text-xs font-medium text-slate-800">فقط آگهی‌های با قیمت توافقی</span>
           </div>
           <input
             type="checkbox"
@@ -266,13 +266,13 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
         </div>
       )}
 
-      {/* Free & Enterprise Notice */}
+      {/* Enterprise Notice */}
       <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-[11px] text-emerald-800 leading-relaxed">
         <div className="font-bold flex items-center gap-1 mb-1">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-          <span>خدمات رایگان سازمانی</span>
+          <span>ارتباط مستقیم سازمانی</span>
         </div>
-        درج آگهی و تبادل خدمات در این سامانه کاملاً رایگان بوده و هیچ‌گونه کارمزد یا درگاه پرداخت وجود ندارد.
+        درج آگهی و تبادل خدمات در این سامانه به صورت مستقیم میان همکاران انجام شده و هیچ‌گونه کارمزد یا واسطه‌ای وجود ندارد.
       </div>
     </div>
   );

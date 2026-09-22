@@ -67,11 +67,6 @@ export const AdCard: React.FC<AdCardProps> = ({
                 فوری
               </span>
             )}
-            {ad.isFree && (
-              <span className="bg-emerald-600/90 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-lg shadow-xs">
-                رایگان
-              </span>
-            )}
             {ad.status === 'PENDING' && (
               <span className="bg-amber-600/90 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-lg shadow-xs">
                 در انتظار تایید
