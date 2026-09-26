@@ -46,15 +46,15 @@ export const AdCard: React.FC<AdCardProps> = ({
   return (
     <div
       onClick={() => onClick(ad)}
-      className="group bg-white rounded-2xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all duration-200 overflow-hidden cursor-pointer flex flex-col justify-between"
+      className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md dark:hover:shadow-slate-950/60 transition-all duration-200 overflow-hidden cursor-pointer flex flex-col justify-between"
       dir="rtl"
     >
       <div>
         {/* Card Image & Badges */}
-        <div className="relative aspect-16/10 sm:aspect-4/3 w-full bg-slate-100 overflow-hidden">
+        <div className="relative aspect-16/10 sm:aspect-4/3 w-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
           <img
             src={mainImage}
-            alt={ad.title}
+            alt={ad?.title || 'تصویر آگهی'}
             className="w-full h-full object-cover group-hover:scale-102 transition duration-300"
             loading="lazy"
           />
@@ -106,13 +106,13 @@ export const AdCard: React.FC<AdCardProps> = ({
         {/* Card Body */}
         <div className="p-3.5 space-y-2">
           {/* Category title */}
-          <div className="text-[11px] font-medium text-rose-600">
+          <div className="text-[11px] font-medium text-rose-600 dark:text-rose-400">
             {ad.categoryTitle || category?.title || 'عمومی'}
           </div>
 
           {/* Ad Title */}
-          <h3 className="font-bold text-slate-900 text-sm line-clamp-2 leading-snug group-hover:text-rose-600 transition">
-            {ad.title}
+          <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm line-clamp-2 leading-snug group-hover:text-rose-600 dark:group-hover:text-rose-400 transition">
+            {ad?.title || 'بدون عنوان'}
           </h3>
 
           {/* Dynamic Highlighted Custom Fields */}
@@ -121,7 +121,7 @@ export const AdCard: React.FC<AdCardProps> = ({
               {dynamicBadges.slice(0, 3).map((badge, idx) => (
                 <span
                   key={idx}
-                  className="inline-block text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-medium"
+                  className="inline-block text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-md font-medium border border-transparent dark:border-slate-700/60"
                 >
                   {badge}
                 </span>
@@ -132,19 +132,19 @@ export const AdCard: React.FC<AdCardProps> = ({
       </div>
 
       {/* Card Footer: Price & Time/Location */}
-      <div className="p-3.5 pt-0 border-t border-slate-100 mt-2">
+      <div className="p-3.5 pt-0 border-t border-slate-100 dark:border-slate-800/80 mt-2">
         <div className="flex items-center justify-between pt-2">
-          <span className="text-xs font-bold text-slate-900">
+          <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
             {formatPrice(ad.price, ad.isAgreementPrice, ad.isFree)}
           </span>
-          <span className="text-[11px] text-slate-400 flex items-center gap-1">
+          <span className="text-[11px] text-slate-400 dark:text-slate-500 flex items-center gap-1">
             <Clock className="w-3 h-3" />
             <span>{formatPersianRelativeTime(ad.createdAt)}</span>
           </span>
         </div>
 
-        <div className="text-[11px] text-slate-500 truncate flex items-center gap-1 mt-1.5">
-          <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+        <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1 mt-1.5">
+          <MapPin className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />
           <span className="truncate">{ad.departmentLocation || ad.city}</span>
         </div>
       </div>

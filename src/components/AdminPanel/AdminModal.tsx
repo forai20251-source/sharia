@@ -15,6 +15,7 @@ import {
   Plus,
   Trash2,
   Edit2,
+  UserCog,
   RefreshCw,
   Search,
   Eye,
@@ -52,6 +53,7 @@ import {
   CheckCircle2,
   LogOut,
   Flame,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   User,
@@ -118,7 +120,7 @@ export const PRESET_CATEGORY_IMAGES = [
 ];
 
 interface AdminModalProps {
-  currentUser: User;
+  currentUser: User | null;
   users: User[];
   categories: Category[];
   ads: Ad[];
@@ -147,6 +149,7 @@ interface AdminModalProps {
   onTestADConnection: () => { success: boolean; latencyMs: number; message: string; details: any };
   onTestMySQLConnection: () => { success: boolean; latencyMs: number; message: string };
   onUpdateAd?: (adId: string, updates: Partial<Ad>) => void;
+  onEditUserProfile?: (user: User) => void;
 }
 
 type AdminTab =
@@ -179,6 +182,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onTestADConnection,
   onTestMySQLConnection,
   onUpdateAd,
+  onEditUserProfile,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('ANALYTICS');
 
@@ -214,7 +218,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [catFormDescription, setCatFormDescription] = useState('');
   const [catFormIcon, setCatFormIcon] = useState('Package');
   const [catFormColor, setCatFormColor] = useState('from-indigo-500 to-blue-600');
-  const [catFormManagerId, setCatFormManagerId] = useState(users[0]?.id || currentUser.id);
+  const [catFormManagerId, setCatFormManagerId] = useState(users[0]?.id || currentUser?.id || 'usr-admin');
   const [catFormAutoApprove, setCatFormAutoApprove] = useState(false);
   const [catFormDefaultImage, setCatFormDefaultImage] = useState('');
 
@@ -239,6 +243,11 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   // Copied code feedback
   const [copiedSql, setCopiedSql] = useState(false);
   const [copiedNuxt, setCopiedNuxt] = useState(false);
+
+  // In-app deletion confirmation states (avoid window.confirm in iframe)
+  const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
+  const [adToDeleteId, setAdToDeleteId] = useState<string | null>(null);
+  const [adConfigSaved, setAdConfigSaved] = useState(false);
 
   // Export User Performance Report to CSV
   const handleExportCSV = () => {
@@ -334,7 +343,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setCatFormDescription('');
     setCatFormIcon('Package');
     setCatFormColor('from-indigo-500 to-blue-600');
-    setCatFormManagerId(users[0]?.id || currentUser.id);
+    setCatFormManagerId(users[0]?.id || currentUser?.id || 'usr-admin');
     setCatFormAutoApprove(false);
     setCatFormDefaultImage('');
     setShowCategoryModal(true);
@@ -398,24 +407,30 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   };
 
   const handleDeleteCategoryPrompt = (cat: Category) => {
-    const adsCount = ads.filter(a => a.categoryId === cat.id).length;
-    let confirmMsg = `آیا از حذف دسته‌بندی «${cat.title}» اطمینان دارید؟`;
-    if (adsCount > 0) {
-      confirmMsg += `\nتوجه: تعداد ${toPersianDigits(adsCount)} آگهی در این دسته ثبت شده است.`;
+    setCategoryToDelete(cat);
+  };
+
+  const handleConfirmDeleteCategory = () => {
+    if (!categoryToDelete) return;
+    const catId = categoryToDelete.id;
+    onDeleteCategory(catId);
+    if (selectedCatForFields === catId) {
+      const remaining = categories.filter(c => c.id !== catId);
+      setSelectedCatForFields(remaining[0]?.id || '');
     }
-    if (confirm(confirmMsg)) {
-      onDeleteCategory(cat.id);
-      if (selectedCatForFields === cat.id) {
-        const remaining = categories.filter(c => c.id !== cat.id);
-        setSelectedCatForFields(remaining[0]?.id || '');
-      }
-    }
+    setCategoryToDelete(null);
+  };
+
+  const handleConfirmDeleteAd = () => {
+    if (!adToDeleteId) return;
+    onDeleteAd(adToDeleteId);
+    setAdToDeleteId(null);
   };
 
   // Filtered ads for moderation
   const relevantAdsForModerator = ads.filter(a => {
-    if (currentUser.role === 'SUPER_ADMIN') return true;
-    if (currentUser.role === 'CATEGORY_MANAGER') {
+    if (currentUser?.role === 'SUPER_ADMIN') return true;
+    if (currentUser?.role === 'CATEGORY_MANAGER') {
       return !!currentUser.managedCategoryIds?.includes(a.categoryId);
     }
     return false;
@@ -440,7 +455,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       return false;
     }
     // If current user is category manager, restrict to their categories unless super admin
-    if (currentUser.role === 'CATEGORY_MANAGER' && !currentUser.managedCategoryIds?.includes(a.categoryId)) {
+    if (currentUser?.role === 'CATEGORY_MANAGER' && !currentUser.managedCategoryIds?.includes(a.categoryId)) {
       return false;
     }
     return true;
@@ -454,7 +469,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs" onClick={onClose} />
 
       {/* Modal Container */}
-      <div className="relative bg-white rounded-3xl shadow-2xl max-w-6xl w-full h-[92vh] flex flex-col z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="relative bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-3xl shadow-2xl max-w-6xl w-full h-[92vh] flex flex-col z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-150 border border-transparent dark:border-slate-800 transition-colors">
         {/* Header */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -477,16 +492,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-2 text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
               <span className="text-slate-300">کاربر جاری:</span>
-              <span className="font-bold text-white">{currentUser.displayName}</span>
+              <span className="font-bold text-white">{currentUser?.displayName || 'مدیر سیستم'}</span>
               <span className="text-[10px] bg-rose-600/80 px-1.5 py-0.2 rounded font-mono">
-                {currentUser.role}
+                {currentUser?.role || 'ADMIN'}
               </span>
             </div>
 
             <button
               type="button"
               onClick={onClose}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-200 hover:text-white border border-rose-500/30 text-xs font-semibold transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-200 hover:text-white border border-rose-500/30 text-xs font-semibold transition cursor-pointer"
               title="خروج و قفل پنل مدیریت"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -496,7 +511,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition"
+              className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition cursor-pointer"
               title="بستن"
             >
               <X className="w-5 h-5" />
@@ -505,14 +520,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         </div>
 
         {/* Tab Navigation Bar */}
-        <div className="bg-slate-100/90 border-b border-slate-200 px-4 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 py-2">
+        <div className="bg-slate-100/90 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 py-2">
           <button
             type="button"
             onClick={() => setActiveTab('ANALYTICS')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               activeTab === 'ANALYTICS'
-                ? 'bg-white text-rose-600 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
             }`}
           >
             <BarChart3 className="w-4 h-4" />
@@ -522,10 +537,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('USER_REPORT')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               activeTab === 'USER_REPORT'
-                ? 'bg-white text-rose-600 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
             }`}
           >
             <Users className="w-4 h-4" />
@@ -535,10 +550,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('MODERATION')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap relative ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap relative cursor-pointer ${
               activeTab === 'MODERATION'
-                ? 'bg-white text-rose-600 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
             }`}
           >
             <ShieldCheck className="w-4 h-4" />
@@ -562,10 +577,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('CATEGORIES')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               activeTab === 'CATEGORIES'
-                ? 'bg-white text-rose-600 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
             }`}
           >
             <Layers className="w-4 h-4" />
@@ -575,10 +590,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('ACTIVE_DIRECTORY')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               activeTab === 'ACTIVE_DIRECTORY'
-                ? 'bg-white text-rose-600 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
             }`}
           >
             <Server className="w-4 h-4" />
@@ -588,10 +603,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('MYSQL_LOCAL')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               activeTab === 'MYSQL_LOCAL'
-                ? 'bg-white text-rose-600 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
             }`}
           >
             <Database className="w-4 h-4" />
@@ -601,10 +616,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('AUDIT_LOGS')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               activeTab === 'AUDIT_LOGS'
-                ? 'bg-white text-rose-600 shadow-xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
             }`}
           >
             <FileText className="w-4 h-4" />
@@ -613,7 +628,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         </div>
 
         {/* Tab Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 dark:bg-slate-950/40">
           {/* TAB 1: ANALYTICS & DASHBOARD */}
           {activeTab === 'ANALYTICS' && (
             <div className="space-y-6 animate-in fade-in duration-150">
@@ -776,6 +791,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         <th className="py-3 px-3 text-center">رد شده</th>
                         <th className="py-3 px-3 text-center">کل بازدید</th>
                         <th className="py-3 px-4">آخرین فعالیت (شمسی)</th>
+                        <th className="py-3 px-3 text-center">عملیات مدیریت</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -786,7 +802,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           return (
                             item.user.displayName.toLowerCase().includes(q) ||
                             item.user.username.toLowerCase().includes(q) ||
-                            item.user.department.toLowerCase().includes(q)
+                            (item.user.department || '').toLowerCase().includes(q)
                           );
                         })
                         .map(item => (
@@ -841,6 +857,17 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             </td>
                             <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
                               {item.lastActivity}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => onEditUserProfile && onEditUserProfile(item.user)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-600 hover:text-white text-slate-700 font-bold text-xs border border-slate-200 hover:border-rose-600 transition active:scale-95 shadow-2xs group"
+                                title="ویرایش مشخصات، نقش و دسترسی‌های این کاربر"
+                              >
+                                <UserCog className="w-3.5 h-3.5 text-rose-600 group-hover:text-white transition" />
+                                <span>ویرایش پروفایل</span>
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -1128,11 +1155,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                           <button
                             type="button"
-                            onClick={() => {
-                              if (confirm('آیا از حذف کامل این آگهی اطمینان دارید؟')) {
-                                onDeleteAd(ad.id);
-                              }
-                            }}
+                            onClick={() => setAdToDeleteId(ad.id)}
                             className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition"
                             title="حذف"
                           >
@@ -1646,7 +1669,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                     <div>
                       <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                        <span>فیلدهای ویژگی اختصاصی برای دسته‌بندی «{activeCategoryObject.title}»</span>
+                        <span>فیلدهای ویژگی اختصاصی برای دسته‌بندی «{activeCategoryObject?.title || ''}»</span>
                       </h4>
                       <p className="text-xs text-slate-500 mt-0.5">
                         فیلدهای مشخص شده زیر برای هر آگهی در این دسته از کاربر دریافت و ذخیره می‌شوند.
@@ -1714,7 +1737,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     <div className="p-4 rounded-2xl bg-white border-2 border-rose-300 shadow-lg space-y-4 animate-in fade-in">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-rose-900">
-                          تعریف فیلد ویژگی جدید برای {activeCategoryObject.title}
+                          تعریف فیلد ویژگی جدید برای {activeCategoryObject?.title || ''}
                         </span>
                         <button
                           type="button"
@@ -1976,14 +1999,21 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-2 flex justify-end">
+                <div className="pt-2 flex items-center justify-end gap-3">
+                  {adConfigSaved && (
+                    <span className="text-xs text-emerald-600 font-bold flex items-center gap-1 animate-in fade-in">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>تنظیمات اکتیودایرکتوری با موفقیت ذخیره شد</span>
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
                       onSaveADConfig({});
-                      alert('تنظیمات اتصال به Active Directory با موفقیت ذخیره شد.');
+                      setAdConfigSaved(true);
+                      setTimeout(() => setAdConfigSaved(false), 3000);
                     }}
-                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2 rounded-xl transition"
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2 rounded-xl transition cursor-pointer"
                   >
                     ذخیره تنظیمات دایرکتوری
                   </button>
@@ -2183,6 +2213,106 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             setEditingAd(null);
           }}
         />
+      )}
+
+      {/* Category Delete Confirmation Modal */}
+      {categoryToDelete && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4" dir="rtl">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            onClick={() => setCategoryToDelete(null)}
+          />
+          <div className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 z-10 space-y-4 border border-slate-100 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-base text-slate-900">حذف دسته‌بندی</h4>
+                <p className="text-xs text-slate-500 mt-0.5">دسته‌بندی «{categoryToDelete?.title || ''}»</p>
+              </div>
+            </div>
+
+            {categoryToDelete && ads.filter(a => a.categoryId === categoryToDelete.id).length > 0 ? (
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-1.5">
+                <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    توجه: تعداد {toPersianDigits(ads.filter(a => a.categoryId === categoryToDelete.id).length)} آگهی در این دسته ثبت شده است!
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-700 leading-relaxed">
+                  در صورت حذف، آگهی‌های این دسته محفوظ مانده و به دسته‌بندی پیش‌فرض منتقل می‌شوند و فیلدهای ویژگی این دسته حذف خواهند شد.
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-600 leading-relaxed">
+                آیا از حذف دسته‌بندی «<strong className="text-slate-900 font-bold">{categoryToDelete?.title || ''}</strong>» و کلیه مشخصات و فیلدهای ویژگی اختصاصی آن اطمینان کامل دارید؟ این عملیات غیرقابل بازگشت است.
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setCategoryToDelete(null)}
+                className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-xs transition"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteCategory}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>حذف قطعی دسته‌بندی</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ad Delete Confirmation Modal */}
+      {adToDeleteId && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4" dir="rtl">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            onClick={() => setAdToDeleteId(null)}
+          />
+          <div className="relative bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6 z-10 space-y-4 border border-slate-100 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-base text-slate-900">حذف کامل آگهی</h4>
+                <p className="text-xs text-slate-500 mt-0.5">عملیات حذف مستقیم توسط مدیر</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              آیا از حذف کامل این آگهی از پایگاه داده اطمینان دارید؟ این عملیات غیرقابل بازگشت است.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setAdToDeleteId(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold text-xs transition"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteAd}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف قطعی</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

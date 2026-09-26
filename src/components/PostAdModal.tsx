@@ -15,6 +15,7 @@ import {
   ArrowRight,
   ArrowLeft,
   Calendar,
+  Lock,
 } from 'lucide-react';
 import { Category, Ad, User } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
@@ -22,9 +23,10 @@ import { getCurrentJalali, toPersianDigits, formatPersianNumber, getJalaliDateFr
 
 interface PostAdModalProps {
   categories: Category[];
-  currentUser: User;
+  currentUser: User | null;
   onClose: () => void;
   onSubmitAd: (adData: Partial<Ad>) => void;
+  onOpenLogin?: () => void;
 }
 
 interface ValidationError {
@@ -50,6 +52,7 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
   currentUser,
   onClose,
   onSubmitAd,
+  onOpenLogin,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -61,8 +64,10 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
   const [isAgreementPrice, setIsAgreementPrice] = useState(false);
   const [price, setPrice] = useState<number>(0);
   const [isUrgent, setIsUrgent] = useState(false);
-  const [departmentLocation, setDepartmentLocation] = useState(currentUser.department || 'ساختمان مرکزی');
-  const [authorPhone, setAuthorPhone] = useState(`${currentUser.mobilePhone} (داخلی ${currentUser.internalPhone})`);
+  const [departmentLocation, setDepartmentLocation] = useState(currentUser?.department || 'ساختمان مرکزی');
+  const [authorPhone, setAuthorPhone] = useState(
+    currentUser ? `${currentUser.mobilePhone} (داخلی ${currentUser.internalPhone})` : ''
+  );
   const [selectedImages, setSelectedImages] = useState<string[]>([PRESET_IMAGE_OPTIONS[0].url]);
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
   const [expiryDateShamsi, setExpiryDateShamsi] = useState('');
@@ -138,7 +143,7 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                 step: 2,
                 field: field.name,
                 label: field.label,
-                message: `تکمیل مشخصه «${field.label}» برای دسته ${currentCategory.title} الزامی است.`,
+                message: `تکمیل مشخصه «${field.label}» برای دسته ${currentCategory?.title || ''} الزامی است.`,
               });
             }
           }
@@ -253,6 +258,42 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
     onClose();
   };
 
+  if (!currentUser) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4" dir="rtl">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs" onClick={onClose} />
+        <div className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 z-10 text-center animate-in fade-in zoom-in-95 border border-slate-100">
+          <div className="w-16 h-16 mx-auto rounded-3xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4 border border-rose-100 shadow-sm">
+            <Lock className="w-8 h-8" />
+          </div>
+          <h3 className="font-extrabold text-base text-slate-900">ورود به حساب کاربری الزامی است</h3>
+          <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+            جهت حفظ انضباط و امنیت شبکه داخلی، ثبت آگهی منحصراً برای همکاران دارای حساب کاربری ویندوز (Active Directory) امکان‌پذیر است. لطفاً ابتدا وارد حساب کاربری خود شوید.
+          </p>
+          <div className="flex items-center justify-center gap-2.5 mt-6">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+            >
+              انصراف
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenLogin?.();
+              }}
+              className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition"
+            >
+              ورود با حساب کاربری
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6" dir="rtl">
       {/* Backdrop */}
@@ -260,66 +301,68 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
 
       {/* Modal Box */}
       <div
-        className="relative bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] sm:max-h-[85vh] flex flex-col z-10 animate-in fade-in zoom-in-95 duration-200 overflow-hidden border border-slate-100"
+        className="relative bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] sm:max-h-[85vh] flex flex-col z-10 animate-in fade-in zoom-in-95 duration-200 overflow-hidden border border-slate-100 dark:border-slate-800 transition-colors"
       >
         {/* Header - Pinned */}
-        <div className="shrink-0 bg-white px-6 py-4 border-b border-slate-100 flex items-center justify-between z-10">
+        <div className="shrink-0 bg-white dark:bg-slate-900 px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between z-10">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
               +
             </div>
             <div>
-              <h2 className="font-extrabold text-base text-slate-900">ثبت آگهی سازمانی</h2>
-              <p className="text-[11px] text-slate-500">در بستر امن شبکه داخلی سازمان</p>
+              <h2 className="font-extrabold text-base text-slate-900 dark:text-slate-100">ثبت آگهی سازمانی</h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                ثبت به نام: <span className="font-bold text-slate-800 dark:text-slate-200">{currentUser.displayName}</span> {currentUser.department ? `(${currentUser.department})` : ''}
+              </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition"
+            className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Step Wizard Indicator - Pinned */}
-        <div className="shrink-0 px-6 py-3 bg-slate-50/70 border-b border-slate-100 z-10">
+        <div className="shrink-0 px-6 py-3 bg-slate-50/70 dark:bg-slate-850/80 border-b border-slate-100 dark:border-slate-800 z-10">
           <div className="flex items-center justify-between relative">
-            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200/80 -translate-y-1/2 z-0" />
+            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200/80 dark:bg-slate-700 -translate-y-1/2 z-0" />
             <button
               type="button"
               onClick={() => setStep(1)}
-              className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                step === 1 ? 'bg-rose-600 text-white shadow-xs' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/60'
+              className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                step === 1 ? 'bg-rose-600 text-white shadow-xs' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200/60 dark:border-slate-700'
               }`}
             >
               <span>۱. مشخصات پایه و دسته</span>
               {hasStepErrors(1) && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-white animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
               )}
             </button>
             <button
               type="button"
               onClick={() => setStep(2)}
-              className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                step === 2 ? 'bg-rose-600 text-white shadow-xs' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/60'
+              className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                step === 2 ? 'bg-rose-600 text-white shadow-xs' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200/60 dark:border-slate-700'
               }`}
             >
               <span>۲. ویژگی‌های اختصاصی دسته</span>
               {hasStepErrors(2) && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-white animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
               )}
             </button>
             <button
               type="button"
               onClick={() => setStep(3)}
-              className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                step === 3 ? 'bg-rose-600 text-white shadow-xs' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/60'
+              className={`relative z-10 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                step === 3 ? 'bg-rose-600 text-white shadow-xs' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200/60 dark:border-slate-700'
               }`}
             >
               <span>۳. تصاویر و قیمت‌گذاری</span>
               {hasStepErrors(3) && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-white animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
               )}
             </button>
           </div>
@@ -689,12 +732,12 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                   <div className="flex items-center gap-2.5 min-w-0">
                     <img
                       src={currentCategory.defaultImage}
-                      alt={currentCategory.title}
+                      alt={currentCategory?.title || 'تصویر دسته‌بندی'}
                       className="w-12 h-10 rounded-xl object-cover border border-slate-200 shadow-2xs shrink-0"
                     />
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-slate-800 truncate">
-                        تصویر پیش‌فرض دسته‌بندی «{currentCategory.title}»
+                        تصویر پیش‌فرض دسته‌بندی «{currentCategory?.title || ''}»
                       </div>
                       <div className="text-[11px] text-slate-500 truncate">
                         در صورت عدم انتخاب تصویر دیگر، این تصویر برای آگهی اعمال می‌شود.
@@ -890,12 +933,12 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
         </form>
 
         {/* Pinned Footer Action Bar */}
-        <div className="shrink-0 px-6 py-3.5 bg-white border-t border-slate-100 flex items-center justify-between gap-3 shadow-[0_-4px_16px_rgba(0,0,0,0.03)] z-20">
+        <div className="shrink-0 px-6 py-3.5 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shadow-[0_-4px_16px_rgba(0,0,0,0.03)] z-20 transition-colors">
           {step > 1 ? (
             <button
               type="button"
               onClick={() => setStep((step - 1) as 1 | 2)}
-              className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 text-xs font-bold px-4 py-2.5 rounded-xl transition active:scale-95"
+              className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold px-4 py-2.5 rounded-xl transition active:scale-95 cursor-pointer"
             >
               <ArrowRight className="w-4 h-4" />
               <span>مرحله قبل</span>
@@ -904,7 +947,7 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 text-xs font-medium px-3 py-2 rounded-xl transition"
+              className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-medium px-3 py-2 rounded-xl transition cursor-pointer"
             >
               انصراف
             </button>

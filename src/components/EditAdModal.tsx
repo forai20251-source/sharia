@@ -40,22 +40,22 @@ export const EditAdModal: React.FC<EditAdModalProps> = ({
   onSave,
 }) => {
   // Form state initialized with current ad values
-  const [title, setTitle] = useState(ad.title);
-  const [description, setDescription] = useState(ad.description);
-  const [categoryId, setCategoryId] = useState(ad.categoryId);
+  const [title, setTitle] = useState(ad?.title || '');
+  const [description, setDescription] = useState(ad?.description || '');
+  const [categoryId, setCategoryId] = useState(ad?.categoryId || categories[0]?.id || '');
   const [priceType, setPriceType] = useState<'fixed' | 'agreement'>(
-    ad.isAgreementPrice || ad.isFree ? 'agreement' : 'fixed'
+    ad?.isAgreementPrice || ad?.isFree ? 'agreement' : 'fixed'
   );
-  const [price, setPrice] = useState<number>(ad.price || 0);
-  const [city, setCity] = useState(ad.city || 'تهران');
-  const [departmentLocation, setDepartmentLocation] = useState(ad.departmentLocation || '');
-  const [authorPhone, setAuthorPhone] = useState(ad.authorPhone || '');
-  const [expiryDateShamsi, setExpiryDateShamsi] = useState(ad.expiryDateShamsi || '');
-  const [isUrgent, setIsUrgent] = useState(!!ad.isUrgent);
-  const [status, setStatus] = useState<AdStatus>(ad.status);
-  const [rejectionReason, setRejectionReason] = useState(ad.rejectionReason || '');
-  const [images, setImages] = useState<string[]>(ad.images || []);
-  const [customFields, setCustomFields] = useState<Record<string, any>>(ad.customFields || {});
+  const [price, setPrice] = useState<number>(ad?.price || 0);
+  const [city, setCity] = useState(ad?.city || 'تهران');
+  const [departmentLocation, setDepartmentLocation] = useState(ad?.departmentLocation || '');
+  const [authorPhone, setAuthorPhone] = useState(ad?.authorPhone || '');
+  const [expiryDateShamsi, setExpiryDateShamsi] = useState(ad?.expiryDateShamsi || '');
+  const [isUrgent, setIsUrgent] = useState(!!ad?.isUrgent);
+  const [status, setStatus] = useState<AdStatus>(ad?.status || 'PENDING');
+  const [rejectionReason, setRejectionReason] = useState(ad?.rejectionReason || '');
+  const [images, setImages] = useState<string[]>(ad?.images || []);
+  const [customFields, setCustomFields] = useState<Record<string, any>>(ad?.customFields || {});
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -74,7 +74,7 @@ export const EditAdModal: React.FC<EditAdModalProps> = ({
     if (!file) return;
 
     if (file.size > 2.5 * 1024 * 1024) {
-      alert('حجم تصویر نباید بیشتر از ۲.۵ مگابایت باشد.');
+      setErrorMessage('حجم تصویر نباید بیشتر از ۲.۵ مگابایت باشد.');
       return;
     }
 
@@ -144,7 +144,7 @@ export const EditAdModal: React.FC<EditAdModalProps> = ({
       dir="rtl"
     >
       <div
-        className="relative bg-white rounded-3xl shadow-2xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200"
+        className="relative bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-3xl shadow-2xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 transition-colors"
         role="dialog"
         aria-modal="true"
       >
@@ -182,7 +182,7 @@ export const EditAdModal: React.FC<EditAdModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition"
+            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition cursor-pointer"
             title="بستن"
           >
             <X className="w-5 h-5" />
@@ -190,17 +190,17 @@ export const EditAdModal: React.FC<EditAdModalProps> = ({
         </div>
 
         {/* Creator Info Bar */}
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
-          <div className="flex items-center gap-2 text-slate-600">
-            <UserCheck className="w-4 h-4 text-rose-600 shrink-0" />
+        <div className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+          <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+            <UserCheck className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
             <span>ثبت‌کننده:</span>
-            <span className="font-bold text-slate-900">{ad.authorName}</span>
-            <span className="text-[11px] text-slate-400 font-mono">({ad.authorUsername})</span>
-            <span className="text-slate-300">|</span>
-            <span className="text-slate-600">{ad.authorDepartment}</span>
+            <span className="font-bold text-slate-900 dark:text-slate-100">{ad.authorName}</span>
+            <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">({ad.authorUsername})</span>
+            <span className="text-slate-300 dark:text-slate-600">|</span>
+            <span className="text-slate-600 dark:text-slate-300">{ad.authorDepartment}</span>
           </div>
 
-          <div className="flex items-center gap-3 text-slate-500 text-[11px]">
+          <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400 text-[11px]">
             <span>تاریخ ثبت: {toPersianDigits(ad.createdAtShamsi)}</span>
             <span>بازدید: {toPersianDigits(ad.viewsCount || 0)}</span>
           </div>
@@ -364,7 +364,7 @@ export const EditAdModal: React.FC<EditAdModalProps> = ({
           {currentCategory && currentCategory.fields.length > 0 && (
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
               <span className="text-xs font-bold text-slate-800 block">
-                فیلدهای اختصاصی دسته‌بندی «{currentCategory.title}»:
+                فیلدهای اختصاصی دسته‌بندی «{currentCategory?.title || ''}»:
               </span>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -631,11 +631,11 @@ export const EditAdModal: React.FC<EditAdModalProps> = ({
         </form>
 
         {/* Pinned Footer */}
-        <div className="bg-slate-50 border-t border-slate-200 px-6 py-3.5 flex items-center justify-between shrink-0">
+        <div className="bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 px-6 py-3.5 flex items-center justify-between shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-xl transition"
+            className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 rounded-xl transition cursor-pointer"
           >
             انصراف
           </button>
@@ -644,7 +644,7 @@ export const EditAdModal: React.FC<EditAdModalProps> = ({
             <button
               type="button"
               onClick={handleSubmit}
-              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/25 transition active:scale-[0.98]"
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/25 transition active:scale-[0.98] cursor-pointer"
             >
               <Check className="w-4 h-4" />
               <span>ذخیره تغییرات آگهی</span>

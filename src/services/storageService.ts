@@ -1,5 +1,6 @@
 import { User, Category, CategoryField, Ad, AdStatus, ActiveDirectoryConfig, MySQLConfig, AuditLog } from '../types';
 import { INITIAL_USERS, INITIAL_CATEGORIES, INITIAL_ADS, INITIAL_AD_CONFIG, INITIAL_MYSQL_CONFIG, INITIAL_AUDIT_LOGS } from '../data/initialData';
+import { MALE_FACELESS_AVATARS } from '../data/defaultAvatars';
 import { formatJalaliDate } from '../utils/jalali';
 
 const STORAGE_KEYS = {
@@ -48,6 +49,22 @@ class StorageService {
 
   private init() {
     this.users = getFromStorage<User[]>(STORAGE_KEYS.USERS, INITIAL_USERS);
+    // Upgrade any legacy unsplash photos to faceless male icon avatars
+    let usersUpdated = false;
+    this.users = this.users.map((u, idx) => {
+      if (!u.avatar || u.avatar.includes('unsplash.com')) {
+        usersUpdated = true;
+        return {
+          ...u,
+          avatar: MALE_FACELESS_AVATARS[idx % MALE_FACELESS_AVATARS.length].url,
+        };
+      }
+      return u;
+    });
+    if (usersUpdated) {
+      setToStorage(STORAGE_KEYS.USERS, this.users);
+    }
+
     const storedCategories = getFromStorage<Category[]>(STORAGE_KEYS.CATEGORIES, INITIAL_CATEGORIES);
     // Ensure all categories have their default image populated
     this.categories = storedCategories.map(c => {
@@ -63,9 +80,18 @@ class StorageService {
     this.auditLogs = getFromStorage<AuditLog[]>(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
     this.bookmarks = getFromStorage<string[]>(STORAGE_KEYS.BOOKMARKS, ['ad-101', 'ad-103']);
 
-    // Default logged-in user is Super Admin for full visibility, user can easily switch
-    const storedUser = getFromStorage<User | null>(STORAGE_KEYS.CURRENT_USER, null);
-    this.currentUser = storedUser || this.users[0];
+    // Default logged-in user is Super Admin for full visibility, user can easily switch or logout
+    if (localStorage.getItem(STORAGE_KEYS.CURRENT_USER) === null) {
+      this.currentUser = this.users[0];
+      setToStorage(STORAGE_KEYS.CURRENT_USER, this.currentUser);
+    } else {
+      this.currentUser = getFromStorage<User | null>(STORAGE_KEYS.CURRENT_USER, null);
+      if (this.currentUser && (!this.currentUser.avatar || this.currentUser.avatar.includes('unsplash.com'))) {
+        const match = this.users.find(u => u.id === this.currentUser?.id);
+        this.currentUser = match || this.users[0];
+        setToStorage(STORAGE_KEYS.CURRENT_USER, this.currentUser);
+      }
+    }
   }
 
   // Users
@@ -73,8 +99,8 @@ class StorageService {
     return [...this.users];
   }
 
-  getCurrentUser(): User {
-    return this.currentUser || this.users[0];
+  getCurrentUser(): User | null {
+    return this.currentUser;
   }
 
   setCurrentUser(user: User): void {
@@ -87,6 +113,78 @@ class StorageService {
       userId: user.id,
       userName: `${user.displayName} (${user.username})`,
     });
+  }
+
+  logout(): void {
+    const prev = this.currentUser;
+    this.currentUser = null;
+    setToStorage(STORAGE_KEYS.CURRENT_USER, null);
+    if (prev) {
+      this.addAuditLog({
+        action: 'LOGOUT',
+        details: `خروج کاربر ${prev.displayName} (${prev.username}) از سامانه`,
+        status: 'SUCCESS',
+        userId: prev.id,
+        userName: `${prev.displayName} (${prev.username})`,
+      });
+    }
+  }
+
+  updateUser(userId: string, updates: Partial<User>, performedBy?: User): User | undefined {
+    let updatedUser: User | undefined;
+    this.users = this.users.map(u => {
+      if (u.id === userId) {
+        updatedUser = {
+          ...u,
+          ...updates,
+        };
+        return updatedUser;
+      }
+      return u;
+    });
+
+    if (updatedUser) {
+      setToStorage(STORAGE_KEYS.USERS, this.users);
+
+      // If updating current active user session
+      if (this.currentUser && this.currentUser.id === userId) {
+        this.currentUser = updatedUser;
+        setToStorage(STORAGE_KEYS.CURRENT_USER, updatedUser);
+      }
+
+      // Update author information on any existing ads posted by this user
+      let adsChanged = false;
+      this.ads = this.ads.map(ad => {
+        if (ad.authorId === userId) {
+          adsChanged = true;
+          return {
+            ...ad,
+            authorName: updatedUser!.displayName,
+            authorDepartment: updatedUser!.department || '',
+            authorPhone: updatedUser!.mobilePhone
+              ? `${updatedUser!.mobilePhone} (داخلی ${updatedUser!.internalPhone || ''})`
+              : ad.authorPhone,
+          };
+        }
+        return ad;
+      });
+
+      if (adsChanged) {
+        setToStorage(STORAGE_KEYS.ADS, this.ads);
+      }
+
+      this.addAuditLog({
+        action: 'UPDATE_USER',
+        details: `ویرایش مشخصات پروفایل کاربر "${updatedUser.displayName} (${updatedUser.username})"${
+          performedBy && performedBy.id !== userId ? ` توسط مدیر ${performedBy.displayName}` : ' توسط خود کاربر'
+        }`,
+        status: 'SUCCESS',
+        userId: updatedUser.id,
+        userName: `${updatedUser.displayName} (${updatedUser.username})`,
+      });
+    }
+
+    return updatedUser;
   }
 
   verifyAdminCredentials(
@@ -104,7 +202,7 @@ class StorageService {
     // Match user by username, email, or "admin" / "administrator"
     let matched = this.users.find(u => {
       const uClean = u.username.toLowerCase().replace(/^(corp\\|corp\/)/i, '');
-      return uClean === clean || u.email.toLowerCase().startsWith(clean);
+      return uClean === clean || (u.email ? u.email.toLowerCase().startsWith(clean) : false);
     });
 
     if (!matched && (clean === 'admin' || clean === 'administrator')) {
@@ -170,18 +268,19 @@ class StorageService {
 
   saveCategory(cat: Partial<Category>): Category {
     let saved: Category;
-    const isNew = !cat.id;
-    if (cat.id) {
-      this.categories = this.categories.map(c => {
-        if (c.id === cat.id) {
-          saved = { ...c, ...cat } as Category;
-          return saved;
-        }
-        return c;
-      });
+    const existingIndex = cat.id ? this.categories.findIndex(c => c.id === cat.id) : -1;
+    const isNew = existingIndex === -1;
+
+    if (!isNew) {
+      saved = {
+        ...this.categories[existingIndex],
+        ...cat,
+        fields: cat.fields || this.categories[existingIndex].fields || [],
+      } as Category;
+      this.categories[existingIndex] = saved;
     } else {
       saved = {
-        id: `cat-${Date.now()}`,
+        id: cat.id || `cat-${Date.now()}`,
         title: cat.title || 'دسته‌بندی جدید',
         slug: cat.slug || `cat-${Date.now()}`,
         icon: cat.icon || 'Tag',
@@ -192,6 +291,7 @@ class StorageService {
         managerDepartment: cat.managerDepartment || 'مدیریت',
         allowAutoApprove: !!cat.allowAutoApprove,
         fields: cat.fields || [],
+        defaultImage: cat.defaultImage,
       };
       this.categories.push(saved);
     }
@@ -199,21 +299,61 @@ class StorageService {
     this.addAuditLog({
       action: isNew ? 'CREATE_CATEGORY' : 'UPDATE_CATEGORY',
       details: isNew
-        ? `ایجاد دسته‌بندی جدید "${saved!.title}" و انتساب مدیر "${saved!.managerName}"`
-        : `بروزرسانی دسته‌بندی "${saved!.title}" و انتساب مدیر`,
+        ? `ایجاد دسته‌بندی جدید "${saved.title}" و انتساب مدیر "${saved.managerName}"`
+        : `بروزرسانی دسته‌بندی "${saved.title}" و انتساب مدیر`,
       status: 'SUCCESS',
     });
-    return saved!;
+    return saved;
   }
 
   deleteCategory(id: string): void {
     const target = this.categories.find(c => c.id === id);
     this.categories = this.categories.filter(c => c.id !== id);
     setToStorage(STORAGE_KEYS.CATEGORIES, this.categories);
+
+    // If there are ads in this category, reassign them to the first available category
+    if (this.categories.length > 0) {
+      const fallbackCat = this.categories[0];
+      let adsChanged = false;
+      this.ads = this.ads.map(ad => {
+        if (ad.categoryId === id) {
+          adsChanged = true;
+          return {
+            ...ad,
+            categoryId: fallbackCat.id,
+            categoryTitle: fallbackCat.title,
+            categoryName: fallbackCat.title,
+          };
+        }
+        return ad;
+      });
+      if (adsChanged) {
+        setToStorage(STORAGE_KEYS.ADS, this.ads);
+      }
+    } else {
+      // No remaining categories - fallback to empty category title
+      let adsChanged = false;
+      this.ads = this.ads.map(ad => {
+        if (ad.categoryId === id) {
+          adsChanged = true;
+          return {
+            ...ad,
+            categoryId: '',
+            categoryTitle: 'عمومی',
+            categoryName: 'عمومی',
+          };
+        }
+        return ad;
+      });
+      if (adsChanged) {
+        setToStorage(STORAGE_KEYS.ADS, this.ads);
+      }
+    }
+
     if (target) {
       this.addAuditLog({
         action: 'DELETE_CATEGORY',
-        details: `حذف دسته‌بندی "${target.title}" به همراه فیلدهای ویژگی`,
+        details: `حذف دسته‌بندی "${target?.title || id}" به همراه فیلدهای ویژگی`,
         status: 'WARNING',
       });
     }
@@ -289,7 +429,7 @@ class StorageService {
       id: `ad-${Date.now()}`,
       title: adData.title || '',
       description: adData.description || '',
-      categoryId: adData.categoryId || this.categories[0].id,
+      categoryId: adData.categoryId || this.categories[0]?.id || '',
       categoryTitle: category?.title || 'عمومی',
       price: adData.isFree ? 0 : (adData.isAgreementPrice ? 0 : (adData.price || 0)),
       isAgreementPrice: !!adData.isAgreementPrice,
@@ -301,11 +441,11 @@ class StorageService {
         category?.defaultImage || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80'
       ],
       city: adData.city || 'تهران',
-      departmentLocation: adData.departmentLocation || user.department,
+      departmentLocation: adData.departmentLocation || user.department || 'ساختمان مرکزی',
       authorId: user.id,
       authorName: user.displayName,
       authorUsername: user.username,
-      authorDepartment: user.department,
+      authorDepartment: user.department || 'عمومی',
       authorPhone: adData.authorPhone || `${user.mobilePhone} (داخلی ${user.internalPhone})`,
       createdAt: now.toISOString(),
       createdAtShamsi: formatJalaliDate(now, 'short'),
@@ -331,7 +471,7 @@ class StorageService {
   updateAd(id: string, updates: Partial<Ad>, byUser?: string): Ad | undefined {
     let updatedAd: Ad | undefined;
     const user = this.getCurrentUser();
-    const modifierName = byUser || user.displayName;
+    const modifierName = byUser || user?.displayName || 'کاربر سیستم';
     this.ads = this.ads.map(ad => {
       if (ad.id === id) {
         const category = updates.categoryId
@@ -402,7 +542,7 @@ class StorageService {
           isUrgent,
           badgeApproved,
           rejectionReason: reason || ad.rejectionReason,
-          reviewedBy: user.displayName,
+          reviewedBy: user?.displayName || 'مدیر سیستم',
           reviewedAt: new Date().toISOString(),
         };
       }
@@ -418,7 +558,7 @@ class StorageService {
     if (reason) {
       details += ` به علت: ${reason}`;
     }
-    details += ` توسط مدیر ${user.displayName}`;
+    details += ` توسط مدیر ${user?.displayName || 'سیستم'}`;
 
     this.addAuditLog({
       action,

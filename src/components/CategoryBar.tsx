@@ -97,7 +97,7 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
         </button>
 
         {/* Dynamic Categories */}
-        {categories.map(cat => {
+        {categories.filter(Boolean).map(cat => {
           const IconComp = ICON_MAP[cat.icon] || Tag;
           const isSelected = selectedCategoryId === cat.id;
           const count = getCategoryCount(cat.id);
@@ -116,13 +116,13 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
               {cat.defaultImage ? (
                 <img
                   src={cat.defaultImage}
-                  alt={cat.title}
+                  alt={cat?.title || ''}
                   className="w-4 h-4 rounded-md object-cover border border-black/10 shrink-0"
                 />
               ) : (
                 <IconComp className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-slate-500 group-hover:text-rose-600'}`} />
               )}
-              <span>{cat.title}</span>
+              <span>{cat?.title || ''}</span>
               <span
                 className={`text-[10px] px-1.5 py-0.2 rounded-full ${
                   isSelected ? 'bg-rose-700 text-rose-100' : 'bg-slate-100 text-slate-500'

@@ -1,4 +1,5 @@
 import { User, Category, Ad, ActiveDirectoryConfig, MySQLConfig, AuditLog } from '../types';
+import { MALE_FACELESS_AVATARS } from './defaultAvatars';
 
 export const INITIAL_USERS: User[] = [
   {
@@ -11,7 +12,7 @@ export const INITIAL_USERS: User[] = [
     mobilePhone: '۰۹۱۲۱۱۱۱۱۱۱',
     role: 'SUPER_ADMIN',
     adGroups: ['Domain Admins', 'Enterprise Admins', 'IT_Security'],
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    avatar: MALE_FACELESS_AVATARS[0].url,
     lastLoginShamsi: '۱۴۰۳/۰۶/۳۰ ساعت ۱۲:۴۰',
     adsCount: 3,
     status: 'ACTIVE',
@@ -27,7 +28,7 @@ export const INITIAL_USERS: User[] = [
     role: 'CATEGORY_MANAGER',
     managedCategoryIds: ['cat-vehicles'],
     adGroups: ['Domain Users', 'Transport_Managers', 'App_Moderators'],
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    avatar: MALE_FACELESS_AVATARS[1].url,
     lastLoginShamsi: '۱۴۰۳/۰۶/۳۰ ساعت ۱۱:۱۵',
     adsCount: 5,
     status: 'ACTIVE',
@@ -43,7 +44,7 @@ export const INITIAL_USERS: User[] = [
     role: 'CATEGORY_MANAGER',
     managedCategoryIds: ['cat-realestate', 'cat-office'],
     adGroups: ['Domain Users', 'Facilities_Managers', 'App_Moderators'],
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    avatar: MALE_FACELESS_AVATARS[2].url,
     lastLoginShamsi: '۱۴۰۳/۰۶/۲۹ ساعت ۱۵:۱۰',
     adsCount: 4,
     status: 'ACTIVE',
@@ -59,7 +60,7 @@ export const INITIAL_USERS: User[] = [
     role: 'CATEGORY_MANAGER',
     managedCategoryIds: ['cat-digital'],
     adGroups: ['Domain Users', 'IT_Support', 'App_Moderators'],
-    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
+    avatar: MALE_FACELESS_AVATARS[3].url,
     lastLoginShamsi: '۱۴۰۳/۰۶/۳۰ ساعت ۰۹:۲۰',
     adsCount: 6,
     status: 'ACTIVE',
@@ -74,7 +75,7 @@ export const INITIAL_USERS: User[] = [
     mobilePhone: '۰۹۱۲۵۵۵۵۵۵۵',
     role: 'USER',
     adGroups: ['Domain Users', 'Finance_Staff'],
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+    avatar: MALE_FACELESS_AVATARS[4].url,
     lastLoginShamsi: '۱۴۰۳/۰۶/۲۸ ساعت ۱۴:۰۵',
     adsCount: 2,
     status: 'ACTIVE',

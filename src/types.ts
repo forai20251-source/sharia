@@ -4,8 +4,8 @@ export interface User {
   id: string;
   username: string; // e.g. "m.ahmadi" or "CORP\\m.ahmadi"
   displayName: string; // e.g. "محمد احمدی"
-  email: string;
-  department: string; // e.g. "فناوری اطلاعات و ارتباطات"
+  email?: string;
+  department?: string; // e.g. "فناوری اطلاعات و ارتباطات"
   internalPhone: string; // e.g. "۴۳۲۱"
   mobilePhone: string; // e.g. "۰۹۱۲۳۴۵۶۷۸۹"
   role: UserRole;
@@ -91,6 +91,7 @@ export interface AuditLog {
     | 'LOGIN_ADMIN'
     | 'ACCESS_DENIED'
     | 'LOGOUT'
+    | 'UPDATE_USER'
     | 'CREATE_AD'
     | 'UPDATE_AD'
     | 'APPROVE_AD'
