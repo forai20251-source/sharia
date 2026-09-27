@@ -147,7 +147,20 @@ interface AdminModalProps {
   onDeleteCategoryField: (catId: string, fieldId: string) => void;
   onSaveADConfig: (cfg: Partial<ActiveDirectoryConfig>) => void;
   onTestADConnection: () => { success: boolean; latencyMs: number; message: string; details: any };
-  onTestMySQLConnection: () => { success: boolean; latencyMs: number; message: string };
+  onTestMySQLConnection: () => Promise<{
+    success: boolean;
+    connected?: boolean;
+    serverReachable?: boolean;
+    databaseExists?: boolean;
+    latencyMs: number;
+    message: string;
+    tip?: string;
+    code?: string;
+    tablesCount?: number;
+    tables?: string[];
+    missingTables?: string[];
+  }>;
+  onInitMySQLSchema?: () => Promise<{ success: boolean; message: string }>;
   onUpdateAd?: (adId: string, updates: Partial<Ad>) => void;
   onEditUserProfile?: (user: User) => void;
 }
@@ -181,6 +194,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onSaveADConfig,
   onTestADConnection,
   onTestMySQLConnection,
+  onInitMySQLSchema,
   onUpdateAd,
   onEditUserProfile,
 }) => {
@@ -236,9 +250,23 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   // Connection test results
   const [adTestResult, setAdTestResult] = useState<{ success: boolean; latencyMs: number; message: string; details?: any } | null>(null);
-  const [mysqlTestResult, setMysqlTestResult] = useState<{ success: boolean; latencyMs: number; message: string } | null>(null);
+  const [mysqlTestResult, setMysqlTestResult] = useState<{
+    success: boolean;
+    connected?: boolean;
+    serverReachable?: boolean;
+    databaseExists?: boolean;
+    latencyMs: number;
+    message: string;
+    tip?: string;
+    code?: string;
+    tablesCount?: number;
+    tables?: string[];
+    missingTables?: string[];
+  } | null>(null);
   const [isTestingAD, setIsTestingAD] = useState(false);
   const [isTestingMySQL, setIsTestingMySQL] = useState(false);
+  const [isInitializingDb, setIsInitializingDb] = useState(false);
+  const [initDbResult, setInitDbResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Copied code feedback
   const [copiedSql, setCopiedSql] = useState(false);
@@ -297,12 +325,42 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     }, 600);
   };
 
-  const handleTestMySQL = () => {
+  const handleTestMySQL = async () => {
     setIsTestingMySQL(true);
-    setTimeout(() => {
-      setMysqlTestResult(onTestMySQLConnection());
+    setInitDbResult(null);
+    try {
+      const result = await onTestMySQLConnection();
+      setMysqlTestResult(result);
+    } catch (err: any) {
+      setMysqlTestResult({
+        success: false,
+        connected: false,
+        latencyMs: 0,
+        message: `خطا در اجرای تست اتصال: ${err.message}`,
+        tip: 'بررسی کنید که وب‌سرور یا سرویس بک‌اند روی پورت ۳۰۰۰ فعال باشد.',
+      });
+    } finally {
       setIsTestingMySQL(false);
-    }, 400);
+    }
+  };
+
+  const handleInitDbSchema = async () => {
+    if (!onInitMySQLSchema) return;
+    setIsInitializingDb(true);
+    try {
+      const res = await onInitMySQLSchema();
+      setInitDbResult(res);
+      if (res.success) {
+        setTimeout(handleTestMySQL, 600);
+      }
+    } catch (e: any) {
+      setInitDbResult({
+        success: false,
+        message: `خطا در ایجاد جداول: ${e.message}`,
+      });
+    } finally {
+      setIsInitializingDb(false);
+    }
   };
 
   const handleCreateField = (e: React.FormEvent) => {
@@ -2059,31 +2117,108 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               </div>
 
               {mysqlTestResult && (
-                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>{mysqlTestResult.message} (پینگ سرور: {toPersianDigits(mysqlTestResult.latencyMs)} میلی‌ثانیه)</span>
+                <div
+                  className={`p-4 rounded-2xl border text-xs space-y-3 ${
+                    mysqlTestResult.connected
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                      : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5">
+                    {mysqlTestResult.connected ? (
+                      <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                    )}
+                    <div className="space-y-1.5 flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-sm">
+                          {mysqlTestResult.connected ? 'اتصال واقعی به دیتابیس برقرار شد' : 'عدم برقراری اتصال به MySQL'}
+                        </span>
+                        {mysqlTestResult.latencyMs > 0 && (
+                          <span className="font-mono text-[11px] opacity-80">
+                            پینگ: {toPersianDigits(mysqlTestResult.latencyMs)}ms
+                          </span>
+                        )}
+                      </div>
+                      <p className="leading-relaxed">{mysqlTestResult.message}</p>
+                      {mysqlTestResult.tip && (
+                        <div className="p-2.5 rounded-xl bg-white/70 dark:bg-slate-900/60 border border-current/10 font-sans text-[11px] text-slate-700 dark:text-slate-300">
+                          <span className="font-bold text-rose-700 dark:text-rose-400 ml-1">راهنمای رفع مشکل:</span>
+                          {mysqlTestResult.tip}
+                        </div>
+                      )}
+                      {mysqlTestResult.code && (
+                        <div className="text-[10px] font-mono opacity-70">
+                          کد خطا: {mysqlTestResult.code}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Auto Initialize Schema button if DB is missing or tables are missing */}
+                  {(!mysqlTestResult.connected || (mysqlTestResult.missingTables && mysqlTestResult.missingTables.length > 0)) && onInitMySQLSchema && (
+                    <div className="pt-2 border-t border-rose-200 dark:border-rose-800/60 flex items-center justify-between">
+                      <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                        آیا می‌خواهید دیتابیس و تمام جداول به صورت خودکار روی سرور ساخته شوند؟
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleInitDbSchema}
+                        disabled={isInitializingDb}
+                        className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isInitializingDb ? 'animate-spin' : ''}`} />
+                        <span>{isInitializingDb ? 'در حال ایجاد جداول...' : 'ساخت خودکار دیتابیس و جداول'}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {initDbResult && (
+                    <div
+                      className={`p-2.5 rounded-xl text-xs font-bold ${
+                        initDbResult.success ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                      }`}
+                    >
+                      {initDbResult.message}
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Status Metrics */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-                  <span className="text-slate-500">میزبان (Host):</span>
-                  <div className="font-mono font-bold text-slate-900 mt-0.5">{mysqlConfig.host}:{mysqlConfig.port}</div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">میزبان (Host):</span>
+                  <div className="font-mono font-bold text-slate-900 dark:text-slate-100 mt-0.5">{mysqlConfig.host}:{mysqlConfig.port}</div>
                 </div>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-                  <span className="text-slate-500">نام دیتابیس:</span>
-                  <div className="font-mono font-bold text-slate-900 mt-0.5">{mysqlConfig.database}</div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">نام دیتابیس:</span>
+                  <div className="font-mono font-bold text-slate-900 dark:text-slate-100 mt-0.5">{mysqlConfig.database}</div>
                 </div>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-                  <span className="text-slate-500">کاراکترست (Charset):</span>
-                  <div className="font-mono font-bold text-slate-900 mt-0.5">{mysqlConfig.charset}</div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">کاراکترست (Charset):</span>
+                  <div className="font-mono font-bold text-slate-900 dark:text-slate-100 mt-0.5">{mysqlConfig.charset}</div>
                 </div>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-                  <span className="text-slate-500">وضعیت اتصال:</span>
-                  <div className="font-bold text-emerald-600 mt-0.5 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span>فعال و آماده‌باش</span>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs">
+                  <span className="text-slate-500 dark:text-slate-400">وضعیت اتصال:</span>
+                  <div className="mt-0.5 flex items-center gap-1.5 font-bold">
+                    {mysqlTestResult?.connected ? (
+                      <>
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-emerald-600 dark:text-emerald-400">متصل و فعال</span>
+                      </>
+                    ) : mysqlTestResult ? (
+                      <>
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                        <span className="text-rose-600 dark:text-rose-400">قطع ارتباط</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                        <span className="text-amber-600 dark:text-amber-400">نیاز به تست اتصال</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

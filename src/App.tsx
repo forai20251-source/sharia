@@ -604,6 +604,7 @@ export default function App() {
           onSaveADConfig={handleSaveADConfig}
           onTestADConnection={() => storageService.testActiveDirectoryConnection()}
           onTestMySQLConnection={() => storageService.testMySQLConnection()}
+          onInitMySQLSchema={() => storageService.initMySQLSchema()}
           onUpdateAd={handleUpdateAd}
           onEditUserProfile={handleAdminEditUserProfile}
         />

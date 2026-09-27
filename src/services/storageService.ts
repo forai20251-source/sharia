@@ -660,12 +660,56 @@ class StorageService {
     return this.mysqlConfig;
   }
 
-  testMySQLConnection(): { success: boolean; latencyMs: number; message: string } {
-    return {
-      success: true,
-      latencyMs: Math.floor(Math.random() * 8) + 4,
-      message: `اتصال به پایگاه داده محلی MySQL (${this.mysqlConfig.database} روی پورت ${this.mysqlConfig.port}) با موفقیت برقرار است. اتصال‌های Pool در حالت آماده‌باش قرار دارند.`,
-    };
+  async testMySQLConnection(overrideConfig?: Partial<MySQLConfig>): Promise<{
+    success: boolean;
+    connected?: boolean;
+    serverReachable?: boolean;
+    databaseExists?: boolean;
+    latencyMs: number;
+    message: string;
+    tip?: string;
+    code?: string;
+    tablesCount?: number;
+    tables?: string[];
+    missingTables?: string[];
+  }> {
+    try {
+      const cfg = { ...this.mysqlConfig, ...overrideConfig };
+      const res = await fetch('/api/mysql/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg),
+      });
+      if (!res.ok) {
+        throw new Error(`خطای سرور HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (err: any) {
+      return {
+        success: false,
+        connected: false,
+        latencyMs: 0,
+        message: `عدم برقراری ارتباط با وب‌سرور یا سرویس بک‌اند (${err.message}).`,
+        tip: 'لطفاً اطمینان حاصل کنید که سرویس بک‌اند روی پورت ۳۰۰۰ در حال اجراست (دستور npm run dev یا node server.ts روی سرور).',
+      };
+    }
+  }
+
+  async initMySQLSchema(overrideConfig?: Partial<MySQLConfig>): Promise<{ success: boolean; message: string }> {
+    try {
+      const cfg = { ...this.mysqlConfig, ...overrideConfig };
+      const res = await fetch('/api/mysql/init-schema', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `خطا در ایجاد جداول: ${err.message}`,
+      };
+    }
   }
 
   // Audit Logs
