@@ -9,6 +9,27 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Sanitize host string to remove annotations like (localhost) or brackets
+function cleanHost(rawHost: any): string {
+  if (!rawHost || typeof rawHost !== 'string') return '127.0.0.1';
+  let cleaned = rawHost.replace(/\s*\(.*?\)/g, '').trim();
+  if (cleaned.toLowerCase() === 'localhost') return '127.0.0.1';
+  return cleaned || '127.0.0.1';
+}
+
+// Get effective DB configuration, prioritizing server-side .env file
+function getEffectiveDbConfig(body?: any) {
+  const host = cleanHost(process.env.DB_HOST || body?.host);
+  const port = Number(process.env.DB_PORT || body?.port || 3306);
+  const database = (process.env.DB_NAME || body?.database || 'divar_org').toString().trim();
+  const user = (process.env.DB_USER || body?.user || 'root').toString().trim();
+  const password = process.env.DB_PASSWORD !== undefined && process.env.DB_PASSWORD !== ''
+    ? process.env.DB_PASSWORD
+    : (body?.password !== undefined && body?.password !== '' ? body.password : '');
+
+  return { host, port, database, user, password };
+}
+
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
@@ -17,16 +38,7 @@ async function startServer() {
 
   // Real MySQL Test Connection endpoint
   app.post('/api/mysql/test', async (req, res) => {
-    const config = {
-      host: req.body.host || process.env.DB_HOST || '127.0.0.1',
-      port: Number(req.body.port || process.env.DB_PORT || 3306),
-      database: req.body.database || process.env.DB_NAME || 'divar_org',
-      user: req.body.user || process.env.DB_USER || 'root',
-      password: req.body.password !== undefined && req.body.password !== ''
-        ? req.body.password
-        : (process.env.DB_PASSWORD || ''),
-      connectTimeout: 4000,
-    };
+    const config = getEffectiveDbConfig(req.body);
 
     const startTime = Date.now();
 
@@ -148,15 +160,7 @@ async function startServer() {
 
   // Initialize DB tables automatically endpoint
   app.post('/api/mysql/init-schema', async (req, res) => {
-    const config = {
-      host: req.body.host || process.env.DB_HOST || '127.0.0.1',
-      port: Number(req.body.port || process.env.DB_PORT || 3306),
-      database: req.body.database || process.env.DB_NAME || 'divar_org',
-      user: req.body.user || process.env.DB_USER || 'root',
-      password: req.body.password !== undefined && req.body.password !== ''
-        ? req.body.password
-        : (process.env.DB_PASSWORD || ''),
-    };
+    const config = getEffectiveDbConfig(req.body);
 
     try {
       const serverConn = await mysql.createConnection({
@@ -165,6 +169,7 @@ async function startServer() {
         user: config.user,
         password: config.password,
         multipleStatements: true,
+        connectTimeout: 5000,
       });
 
       await serverConn.query(
@@ -264,9 +269,19 @@ async function startServer() {
         message: `پایگاه داده «${config.database}» و تمام ۶ جدول سازمانی با موفقیت ایجاد شدند.`,
       });
     } catch (err: any) {
-      return res.status(500).json({
+      let friendlyMsg = `خطا در ایجاد پایگاه داده و جداول: ${err.message}`;
+      if (err.code === 'ER_ACCESS_DENIED_ERROR') {
+        friendlyMsg = `دسترسی رد شد: نام کاربری (${config.user}) یا رمز عبور اشتباه است یا کاربر دسترسی CREATE DATABASE ندارد.`;
+      } else if (err.code === 'ECONNREFUSED') {
+        friendlyMsg = `امکان اتصال به سرور MySQL روی ${config.host}:${config.port} وجود ندارد (سرویس خاموش است یا پورت مسدود است).`;
+      } else if (err.code === 'ENOTFOUND') {
+        friendlyMsg = `آدرس سرور MySQL (${config.host}) معتبر نیست یا در شبکه یافت نشد.`;
+      }
+
+      return res.status(200).json({
         success: false,
-        message: `خطا در ایجاد جداول: ${err.message}`,
+        code: err.code,
+        message: friendlyMsg,
       });
     }
   });

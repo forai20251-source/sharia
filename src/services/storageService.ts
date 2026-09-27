@@ -77,6 +77,27 @@ class StorageService {
     this.ads = getFromStorage<Ad[]>(STORAGE_KEYS.ADS, INITIAL_ADS);
     this.adConfig = getFromStorage<ActiveDirectoryConfig>(STORAGE_KEYS.AD_CONFIG, INITIAL_AD_CONFIG);
     this.mysqlConfig = getFromStorage<MySQLConfig>(STORAGE_KEYS.MYSQL_CONFIG, INITIAL_MYSQL_CONFIG);
+    if (this.mysqlConfig && this.mysqlConfig.host) {
+      this.mysqlConfig.host = this.mysqlConfig.host.replace(/\s*\(.*?\)/g, '').trim() || '127.0.0.1';
+    }
+    // Sync with backend .env config if available
+    if (typeof window !== 'undefined') {
+      fetch('/api/mysql/config')
+        .then(res => res.json())
+        .then(cfg => {
+          if (cfg && cfg.host) {
+            this.mysqlConfig = {
+              ...this.mysqlConfig,
+              host: cfg.host.replace(/\s*\(.*?\)/g, '').trim() || '127.0.0.1',
+              port: cfg.port || 3306,
+              database: cfg.database || 'divar_org',
+              user: cfg.user || 'divar_user',
+            };
+            setToStorage(STORAGE_KEYS.MYSQL_CONFIG, this.mysqlConfig);
+          }
+        })
+        .catch(() => {});
+    }
     this.auditLogs = getFromStorage<AuditLog[]>(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
     this.bookmarks = getFromStorage<string[]>(STORAGE_KEYS.BOOKMARKS, ['ad-101', 'ad-103']);
 

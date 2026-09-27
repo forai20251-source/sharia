@@ -687,15 +687,15 @@ export const INITIAL_AD_CONFIG: ActiveDirectoryConfig = {
 };
 
 export const INITIAL_MYSQL_CONFIG: MySQLConfig = {
-  host: '127.0.0.1 (localhost)',
+  host: '127.0.0.1',
   port: 3306,
-  database: 'divar_enterprise_db',
-  user: 'divar_admin',
+  database: 'divar_org',
+  user: 'divar_user',
   passwordMasked: '••••••••••••',
   charset: 'utf8mb4_persian_ci',
   connectionLimit: 25,
   status: 'CONNECTED',
-  tableCount: 8,
+  tableCount: 6,
   totalRecords: 1420,
   lastBackupShamsi: '۱۴۰۳/۰۶/۳۰ ساعت ۰۴:۰۰ صبح',
 };
