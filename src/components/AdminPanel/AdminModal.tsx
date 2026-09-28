@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   BarChart3,
@@ -161,6 +161,9 @@ interface AdminModalProps {
     missingTables?: string[];
   }>;
   onInitMySQLSchema?: () => Promise<{ success: boolean; message: string }>;
+  onSyncWithMySQL?: () => Promise<{ success: boolean; message: string; adsCount: number; categoriesCount: number; wasEmpty?: boolean }>;
+  onSeedToMySQL?: () => Promise<{ success: boolean; message: string }>;
+  onGetMySQLStats?: () => Promise<{ success: boolean; adsCount: number; categoriesCount: number; usersCount: number; auditLogsCount: number }>;
   onUpdateAd?: (adId: string, updates: Partial<Ad>) => void;
   onEditUserProfile?: (user: User) => void;
 }
@@ -195,6 +198,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onTestADConnection,
   onTestMySQLConnection,
   onInitMySQLSchema,
+  onSyncWithMySQL,
+  onSeedToMySQL,
+  onGetMySQLStats,
   onUpdateAd,
   onEditUserProfile,
 }) => {
@@ -267,6 +273,28 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [isTestingMySQL, setIsTestingMySQL] = useState(false);
   const [isInitializingDb, setIsInitializingDb] = useState(false);
   const [initDbResult, setInitDbResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // MySQL Sync & Seed States
+  const [mysqlStats, setMysqlStats] = useState<{
+    adsCount: number;
+    categoriesCount: number;
+    usersCount: number;
+    auditLogsCount: number;
+  } | null>(null);
+  const [isSyncingFromMySQL, setIsSyncingFromMySQL] = useState(false);
+  const [isSeedingToMySQL, setIsSeedingToMySQL] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Load stats when switching to MySQL tab
+  useEffect(() => {
+    if (activeTab === 'MYSQL_LOCAL' && onGetMySQLStats) {
+      onGetMySQLStats().then(stats => {
+        if (stats && stats.success) {
+          setMysqlStats(stats);
+        }
+      });
+    }
+  }, [activeTab]);
 
   // Copied code feedback
   const [copiedSql, setCopiedSql] = useState(false);
@@ -360,6 +388,42 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       });
     } finally {
       setIsInitializingDb(false);
+    }
+  };
+
+  const handleSyncFromDb = async () => {
+    if (!onSyncWithMySQL) return;
+    setIsSyncingFromMySQL(true);
+    setSyncNotice(null);
+    try {
+      const res = await onSyncWithMySQL();
+      setSyncNotice({ success: res.success, message: res.message });
+      if (onGetMySQLStats) {
+        const stats = await onGetMySQLStats();
+        if (stats.success) setMysqlStats(stats);
+      }
+    } catch (e: any) {
+      setSyncNotice({ success: false, message: `خطا در دریافت داده‌ها: ${e.message}` });
+    } finally {
+      setIsSyncingFromMySQL(false);
+    }
+  };
+
+  const handleSeedToDb = async () => {
+    if (!onSeedToMySQL) return;
+    setIsSeedingToMySQL(true);
+    setSyncNotice(null);
+    try {
+      const res = await onSeedToMySQL();
+      setSyncNotice({ success: res.success, message: res.message });
+      if (onGetMySQLStats) {
+        const stats = await onGetMySQLStats();
+        if (stats.success) setMysqlStats(stats);
+      }
+    } catch (e: any) {
+      setSyncNotice({ success: false, message: `خطا در انتقال داده‌ها: ${e.message}` });
+    } finally {
+      setIsSeedingToMySQL(false);
     }
   };
 
@@ -2221,6 +2285,90 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Live Database Records & Synchronization Card */}
+              <div className="p-4 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 dark:from-slate-800 dark:to-slate-850 rounded-2xl border border-blue-200/80 dark:border-slate-700 space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Database className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span>همگام‌سازی و خواندن مستقیم اطلاعات از MySQL</span>
+                    </h4>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                      داده‌های سامانه (آگهی‌ها، دسته‌بندی‌ها و کاربران) به صورت دوطرفه با پایگاه داده سازمان همگام می‌شوند.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={handleSyncFromDb}
+                      disabled={isSyncingFromMySQL}
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+                      title="فراخوانی و نمایش رکوردهای موجود در MySQL"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingFromMySQL ? 'animate-spin' : ''}`} />
+                      <span>{isSyncingFromMySQL ? 'در حال فراخوانی...' : 'فراخوانی از MySQL'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSeedToDb}
+                      disabled={isSeedingToMySQL}
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+                      title="انتقال داده‌های اولیه به دیتابیس در صورت خالی بودن جداول"
+                    >
+                      <Upload className={`w-3.5 h-3.5 ${isSeedingToMySQL ? 'animate-spin' : ''}`} />
+                      <span>{isSeedingToMySQL ? 'در حال انتقال...' : 'انتقال داده‌ها به MySQL'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Database Row Count Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-blue-200/60 dark:border-slate-700/60">
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block">آگهی‌های ثبت‌شده در دیتابیس</span>
+                    <span className="text-base font-bold text-blue-600 dark:text-blue-400 font-mono">
+                      {mysqlStats !== null ? toPersianDigits(mysqlStats.adsCount) : toPersianDigits(ads.length)}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block">دسته‌بندی‌ها در دیتابیس</span>
+                    <span className="text-base font-bold text-indigo-600 dark:text-indigo-400 font-mono">
+                      {mysqlStats !== null ? toPersianDigits(mysqlStats.categoriesCount) : toPersianDigits(categories.length)}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block">کاربران سازمانی</span>
+                    <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                      {mysqlStats !== null ? toPersianDigits(mysqlStats.usersCount) : toPersianDigits(users.length)}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-center">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block">لاگ‌های نظارتی (Audit)</span>
+                    <span className="text-base font-bold text-amber-600 dark:text-amber-400 font-mono">
+                      {mysqlStats !== null ? toPersianDigits(mysqlStats.auditLogsCount) : toPersianDigits(auditLogs.length)}
+                    </span>
+                  </div>
+                </div>
+
+                {syncNotice && (
+                  <div
+                    className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                      syncNotice.success
+                        ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200'
+                        : 'bg-rose-100 text-rose-900 dark:bg-rose-950/60 dark:text-rose-200'
+                    }`}
+                  >
+                    {syncNotice.success ? (
+                      <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    )}
+                    <span>{syncNotice.message}</span>
+                  </div>
+                )}
               </div>
 
               {/* Code Blocks for MySQL Schema and Nuxt Guide */}

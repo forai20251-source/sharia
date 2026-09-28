@@ -286,6 +286,516 @@ async function startServer() {
     }
   });
 
+  // DB Connection Pool for API Queries
+  let dbPool: mysql.Pool | null = null;
+  function getDbPool() {
+    const config = getEffectiveDbConfig();
+    if (!dbPool) {
+      dbPool = mysql.createPool({
+        host: config.host,
+        port: config.port,
+        database: config.database,
+        user: config.user,
+        password: config.password,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+      });
+    }
+    return dbPool;
+  }
+
+  // Get table row stats from MySQL
+  app.get('/api/mysql/stats', async (req, res) => {
+    try {
+      const pool = getDbPool();
+      const [rows]: any = await pool.query(`
+        SELECT 
+          (SELECT COUNT(*) FROM ads) AS ads_count,
+          (SELECT COUNT(*) FROM categories) AS categories_count,
+          (SELECT COUNT(*) FROM users) AS users_count,
+          (SELECT COUNT(*) FROM audit_logs) AS audit_logs_count
+      `);
+      const stats = rows[0] || {};
+      res.json({
+        success: true,
+        connected: true,
+        adsCount: Number(stats.ads_count || 0),
+        categoriesCount: Number(stats.categories_count || 0),
+        usersCount: Number(stats.users_count || 0),
+        auditLogsCount: Number(stats.audit_logs_count || 0),
+      });
+    } catch (err: any) {
+      res.json({
+        success: false,
+        connected: false,
+        message: err.message,
+        adsCount: 0,
+        categoriesCount: 0,
+        usersCount: 0,
+        auditLogsCount: 0,
+      });
+    }
+  });
+
+  // Read all organizational data from MySQL
+  app.get('/api/mysql/data', async (req, res) => {
+    try {
+      const pool = getDbPool();
+
+      // 1. Users
+      const [userRows]: any = await pool.query('SELECT * FROM users ORDER BY created_at ASC');
+      const users = userRows.map((u: any) => ({
+        id: u.id,
+        username: u.username,
+        displayName: u.display_name,
+        department: u.department || '',
+        internalPhone: u.phone ? (u.phone.match(/داخلی\s*(\d+)/)?.[1] || '۱۰۱') : '۱۰۱',
+        mobilePhone: u.phone ? u.phone.replace(/\(داخلی.*?\)/, '').trim() : '۰۹۱۲۰۰۰۰۰۰۰',
+        email: u.email || '',
+        role: u.role || 'USER',
+        managedCategoryIds: [],
+        adGroups: ['Domain Users'],
+        avatar: u.avatar_url || '',
+        status: 'ACTIVE',
+      }));
+
+      // 2. Categories & Fields
+      const [catRows]: any = await pool.query('SELECT * FROM categories ORDER BY created_at ASC');
+      const [fieldRows]: any = await pool.query('SELECT * FROM category_fields');
+
+      const categories = catRows.map((c: any) => {
+        const fields = fieldRows
+          .filter((f: any) => f.category_id === c.id)
+          .map((f: any) => {
+            let options: string[] = [];
+            if (f.options_json) {
+              options = typeof f.options_json === 'string' ? JSON.parse(f.options_json) : f.options_json;
+            }
+            return {
+              id: f.id,
+              categoryId: f.category_id,
+              name: f.name,
+              label: f.label,
+              type: f.type,
+              required: Boolean(f.required),
+              options,
+              unit: f.unit || '',
+              placeholder: f.placeholder || '',
+              showInCard: true,
+              order: 1,
+            };
+          });
+
+        return {
+          id: c.id,
+          title: c.title,
+          slug: c.slug,
+          icon: c.icon || 'Tag',
+          description: c.description || '',
+          color: 'from-blue-500 to-indigo-600',
+          managerId: c.manager_id || '',
+          managerName: c.manager_name || '',
+          managerDepartment: c.manager_department || '',
+          allowAutoApprove: Boolean(c.auto_approve),
+          fields,
+          defaultImage: c.default_image || '',
+        };
+      });
+
+      // 3. Ads & Custom Values
+      const [adRows]: any = await pool.query('SELECT * FROM ads ORDER BY created_at DESC');
+      const [valRows]: any = await pool.query('SELECT * FROM ad_custom_values');
+
+      const ads = adRows.map((a: any) => {
+        const customValues: Record<string, any> = {};
+        valRows
+          .filter((v: any) => v.ad_id === a.id)
+          .forEach((v: any) => {
+            customValues[v.field_name] = v.field_value;
+          });
+
+        let images: string[] = [];
+        try {
+          if (a.images_json) {
+            images = typeof a.images_json === 'string' ? JSON.parse(a.images_json) : a.images_json;
+          }
+        } catch {}
+
+        const cat = categories.find((c: any) => c.id === a.category_id);
+
+        return {
+          id: a.id,
+          title: a.title,
+          description: a.description,
+          categoryId: a.category_id,
+          categoryTitle: cat?.title || 'عمومی',
+          price: Number(a.price || 0),
+          isAgreementPrice: Boolean(a.is_agreement_price),
+          isFree: Boolean(a.is_free),
+          isUrgent: Boolean(a.is_immediate),
+          badgeRequested: Boolean(a.is_immediate),
+          badgeApproved: Boolean(a.is_immediate),
+          images: Array.isArray(images) && images.length > 0 ? images : [cat?.defaultImage || ''],
+          city: 'تهران',
+          departmentLocation: a.department_location || '',
+          authorId: a.author_id,
+          authorName: a.author_name,
+          authorUsername: `CORP\\${a.author_id}`,
+          authorDepartment: a.author_department || '',
+          authorPhone: a.author_phone || '',
+          createdAt: a.created_at ? new Date(a.created_at).toISOString() : new Date().toISOString(),
+          status: a.status || 'APPROVED',
+          viewsCount: Number(a.views_count || 0),
+          contactViewsCount: 0,
+          customFields: customValues,
+        };
+      });
+
+      // 4. Audit Logs
+      const [logRows]: any = await pool.query('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 150');
+      const auditLogs = logRows.map((l: any) => ({
+        id: l.id,
+        userId: l.actor_id || '',
+        userName: l.actor_name || '',
+        action: l.action || 'CONFIG_CHANGE',
+        details: l.details || '',
+        ipAddress: l.ip_address || '',
+        timestamp: l.created_at ? new Date(l.created_at).toISOString() : new Date().toISOString(),
+        status: 'SUCCESS',
+      }));
+
+      res.json({
+        success: true,
+        source: 'MYSQL',
+        users,
+        categories,
+        ads,
+        auditLogs,
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        message: `خطا در دریافت داده‌ها از دیتابیس MySQL: ${err.message}`,
+      });
+    }
+  });
+
+  // Sync / Seed current data directly to MySQL
+  app.post('/api/mysql/seed', async (req, res) => {
+    try {
+      const pool = getDbPool();
+      const { users = [], categories = [], ads = [], auditLogs = [] } = req.body;
+
+      await pool.query('SET FOREIGN_KEY_CHECKS = 0');
+
+      // 1. Insert/Update Users
+      for (const u of users) {
+        await pool.query(
+          `INSERT INTO users (id, username, display_name, department, phone, email, role, avatar_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), department = VALUES(department), phone = VALUES(phone), role = VALUES(role), avatar_url = VALUES(avatar_url)`,
+          [
+            u.id,
+            u.username,
+            u.displayName,
+            u.department || '',
+            u.mobilePhone ? `${u.mobilePhone} (داخلی ${u.internalPhone || ''})` : '',
+            u.email || '',
+            u.role || 'USER',
+            u.avatar || '',
+          ]
+        );
+      }
+
+      // 2. Insert/Update Categories and Fields
+      for (const c of categories) {
+        await pool.query(
+          `INSERT INTO categories (id, title, slug, icon, description, manager_id, manager_name, manager_department, auto_approve, default_image)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE title = VALUES(title), slug = VALUES(slug), icon = VALUES(icon), description = VALUES(description),
+           manager_id = VALUES(manager_id), manager_name = VALUES(manager_name), manager_department = VALUES(manager_department),
+           auto_approve = VALUES(auto_approve), default_image = VALUES(default_image)`,
+          [
+            c.id,
+            c.title,
+            c.slug || c.id,
+            c.icon || 'Tag',
+            c.description || '',
+            c.managerId || null,
+            c.managerName || '',
+            c.managerDepartment || '',
+            c.allowAutoApprove ? 1 : 0,
+            c.defaultImage || '',
+          ]
+        );
+
+        if (Array.isArray(c.fields)) {
+          for (const f of c.fields) {
+            await pool.query(
+              `INSERT INTO category_fields (id, category_id, name, label, type, required, options_json, unit, placeholder)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON DUPLICATE KEY UPDATE label = VALUES(label), type = VALUES(type), required = VALUES(required), options_json = VALUES(options_json), unit = VALUES(unit), placeholder = VALUES(placeholder)`,
+              [
+                f.id,
+                c.id,
+                f.name,
+                f.label,
+                f.type || 'text',
+                f.required ? 1 : 0,
+                JSON.stringify(f.options || []),
+                f.unit || '',
+                f.placeholder || '',
+              ]
+            );
+          }
+        }
+      }
+
+      // 3. Insert/Update Ads and Custom Values
+      for (const a of ads) {
+        await pool.query(
+          `INSERT INTO ads (id, title, description, category_id, author_id, author_name, author_department, author_phone, price, is_agreement_price, is_free, status, is_immediate, department_location, images_json, views_count)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE title = VALUES(title), description = VALUES(description), category_id = VALUES(category_id), price = VALUES(price),
+           is_agreement_price = VALUES(is_agreement_price), is_free = VALUES(is_free), status = VALUES(status), is_immediate = VALUES(is_immediate), department_location = VALUES(department_location), images_json = VALUES(images_json), views_count = VALUES(views_count)`,
+          [
+            a.id,
+            a.title,
+            a.description,
+            a.categoryId,
+            a.authorId,
+            a.authorName,
+            a.authorDepartment || '',
+            a.authorPhone || '',
+            a.price || 0,
+            a.isAgreementPrice ? 1 : 0,
+            a.isFree ? 1 : 0,
+            a.status || 'APPROVED',
+            a.isUrgent ? 1 : 0,
+            a.departmentLocation || '',
+            JSON.stringify(a.images || []),
+            a.viewsCount || 0,
+          ]
+        );
+
+        if (a.customFields && typeof a.customFields === 'object') {
+          await pool.query('DELETE FROM ad_custom_values WHERE ad_id = ?', [a.id]);
+          for (const [key, val] of Object.entries(a.customFields)) {
+            if (val !== undefined && val !== null && val !== '') {
+              await pool.query(
+                'INSERT INTO ad_custom_values (ad_id, field_name, field_value) VALUES (?, ?, ?)',
+                [a.id, key, String(val)]
+              );
+            }
+          }
+        }
+      }
+
+      // 4. Insert Audit Logs
+      for (const l of auditLogs) {
+        await pool.query(
+          `INSERT INTO audit_logs (id, actor_id, actor_name, action, details, ip_address)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE details = VALUES(details)`,
+          [l.id, l.userId || null, l.userName || '', l.action || 'CONFIG_CHANGE', l.details || '', l.ipAddress || '127.0.0.1']
+        );
+      }
+
+      await pool.query('SET FOREIGN_KEY_CHECKS = 1');
+
+      res.json({
+        success: true,
+        message: `همگام‌سازی موفقیت‌آمیز بود: ${users.length} کاربر، ${categories.length} دسته‌بندی و ${ads.length} آگهی در دیتابیس MySQL ذخیره شدند.`,
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        message: `خطا در همگام‌سازی با MySQL: ${err.message}`,
+      });
+    }
+  });
+
+  // Create Ad in MySQL
+  app.post('/api/ads', async (req, res) => {
+    try {
+      const pool = getDbPool();
+      const a = req.body;
+      await pool.query(
+        `INSERT INTO ads (id, title, description, category_id, author_id, author_name, author_department, author_phone, price, is_agreement_price, is_free, status, is_immediate, department_location, images_json, views_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          a.id,
+          a.title,
+          a.description,
+          a.categoryId,
+          a.authorId,
+          a.authorName,
+          a.authorDepartment || '',
+          a.authorPhone || '',
+          a.price || 0,
+          a.isAgreementPrice ? 1 : 0,
+          a.isFree ? 1 : 0,
+          a.status || 'APPROVED',
+          a.isUrgent ? 1 : 0,
+          a.departmentLocation || '',
+          JSON.stringify(a.images || []),
+          a.viewsCount || 0,
+        ]
+      );
+
+      if (a.customFields && typeof a.customFields === 'object') {
+        for (const [key, val] of Object.entries(a.customFields)) {
+          if (val !== undefined && val !== null && val !== '') {
+            await pool.query(
+              'INSERT INTO ad_custom_values (ad_id, field_name, field_value) VALUES (?, ?, ?)',
+              [a.id, key, String(val)]
+            );
+          }
+        }
+      }
+
+      res.json({ success: true, ad: a });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Update Ad in MySQL
+  app.put('/api/ads/:id', async (req, res) => {
+    try {
+      const pool = getDbPool();
+      const { id } = req.params;
+      const updates = req.body;
+
+      const fields: string[] = [];
+      const values: any[] = [];
+
+      if (updates.title !== undefined) { fields.push('title = ?'); values.push(updates.title); }
+      if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
+      if (updates.categoryId !== undefined) { fields.push('category_id = ?'); values.push(updates.categoryId); }
+      if (updates.price !== undefined) { fields.push('price = ?'); values.push(updates.price); }
+      if (updates.isAgreementPrice !== undefined) { fields.push('is_agreement_price = ?'); values.push(updates.isAgreementPrice ? 1 : 0); }
+      if (updates.isFree !== undefined) { fields.push('is_free = ?'); values.push(updates.isFree ? 1 : 0); }
+      if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+      if (updates.isUrgent !== undefined) { fields.push('is_immediate = ?'); values.push(updates.isUrgent ? 1 : 0); }
+      if (updates.departmentLocation !== undefined) { fields.push('department_location = ?'); values.push(updates.departmentLocation); }
+      if (updates.images !== undefined) { fields.push('images_json = ?'); values.push(JSON.stringify(updates.images)); }
+      if (updates.viewsCount !== undefined) { fields.push('views_count = ?'); values.push(updates.viewsCount); }
+
+      if (fields.length > 0) {
+        values.push(id);
+        await pool.query(`UPDATE ads SET ${fields.join(', ')} WHERE id = ?`, values);
+      }
+
+      if (updates.customFields && typeof updates.customFields === 'object') {
+        await pool.query('DELETE FROM ad_custom_values WHERE ad_id = ?', [id]);
+        for (const [key, val] of Object.entries(updates.customFields)) {
+          if (val !== undefined && val !== null && val !== '') {
+            await pool.query(
+              'INSERT INTO ad_custom_values (ad_id, field_name, field_value) VALUES (?, ?, ?)',
+              [id, key, String(val)]
+            );
+          }
+        }
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Delete Ad in MySQL
+  app.delete('/api/ads/:id', async (req, res) => {
+    try {
+      const pool = getDbPool();
+      await pool.query('DELETE FROM ads WHERE id = ?', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Save Category in MySQL
+  app.post('/api/categories', async (req, res) => {
+    try {
+      const pool = getDbPool();
+      const c = req.body;
+      await pool.query(
+        `INSERT INTO categories (id, title, slug, icon, description, manager_id, manager_name, manager_department, auto_approve, default_image)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE title = VALUES(title), slug = VALUES(slug), icon = VALUES(icon), description = VALUES(description),
+         manager_id = VALUES(manager_id), manager_name = VALUES(manager_name), manager_department = VALUES(manager_department),
+         auto_approve = VALUES(auto_approve), default_image = VALUES(default_image)`,
+        [
+          c.id,
+          c.title,
+          c.slug || c.id,
+          c.icon || 'Tag',
+          c.description || '',
+          c.managerId || null,
+          c.managerName || '',
+          c.managerDepartment || '',
+          c.allowAutoApprove ? 1 : 0,
+          c.defaultImage || '',
+        ]
+      );
+
+      if (Array.isArray(c.fields)) {
+        await pool.query('DELETE FROM category_fields WHERE category_id = ?', [c.id]);
+        for (const f of c.fields) {
+          await pool.query(
+            `INSERT INTO category_fields (id, category_id, name, label, type, required, options_json, unit, placeholder)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              f.id,
+              c.id,
+              f.name,
+              f.label,
+              f.type || 'text',
+              f.required ? 1 : 0,
+              JSON.stringify(f.options || []),
+              f.unit || '',
+              f.placeholder || '',
+            ]
+          );
+        }
+      }
+
+      res.json({ success: true, category: c });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Delete Category in MySQL
+  app.delete('/api/categories/:id', async (req, res) => {
+    try {
+      const pool = getDbPool();
+      await pool.query('DELETE FROM categories WHERE id = ?', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Insert Audit Log in MySQL
+  app.post('/api/audit-logs', async (req, res) => {
+    try {
+      const pool = getDbPool();
+      const l = req.body;
+      await pool.query(
+        `INSERT INTO audit_logs (id, actor_id, actor_name, action, details, ip_address)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [l.id, l.userId || null, l.userName || '', l.action || 'CONFIG_CHANGE', l.details || '', l.ipAddress || '127.0.0.1']
+      );
+      res.json({ success: true });
+    } catch {
+      res.json({ success: false });
+    }
+  });
+
   // Serve frontend in production or Vite in dev
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');

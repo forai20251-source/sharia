@@ -72,9 +72,14 @@ export default function App() {
   const [editingProfileUser, setEditingProfileUser] = useState<User | null>(null);
   const [mobileFilterOpen, setMobileFilterOpen] = useState<boolean>(false);
 
-  // Load initial persistent data on mount
+  // Load initial persistent data on mount and sync with MySQL database
   useEffect(() => {
     refreshData();
+    storageService.syncWithMySQL().then(res => {
+      if (res.success && res.adsCount > 0) {
+        refreshData();
+      }
+    });
   }, []);
 
   const refreshData = () => {
@@ -86,6 +91,22 @@ export default function App() {
     setAdConfig(storageService.getActiveDirectoryConfig());
     setMysqlConfig(storageService.getMySQLConfig());
     setAuditLogs(storageService.getAuditLogs());
+  };
+
+  const handleSyncWithMySQL = async () => {
+    const res = await storageService.syncWithMySQL();
+    if (res.success) {
+      refreshData();
+    }
+    return res;
+  };
+
+  const handleSeedToMySQL = async () => {
+    const res = await storageService.seedToMySQL();
+    if (res.success) {
+      refreshData();
+    }
+    return res;
   };
 
   // Filter handlers
@@ -605,6 +626,9 @@ export default function App() {
           onTestADConnection={() => storageService.testActiveDirectoryConnection()}
           onTestMySQLConnection={() => storageService.testMySQLConnection()}
           onInitMySQLSchema={() => storageService.initMySQLSchema()}
+          onSyncWithMySQL={handleSyncWithMySQL}
+          onSeedToMySQL={handleSeedToMySQL}
+          onGetMySQLStats={() => storageService.getMySQLStats()}
           onUpdateAd={handleUpdateAd}
           onEditUserProfile={handleAdminEditUserProfile}
         />

@@ -324,6 +324,16 @@ class StorageService {
         : `بروزرسانی دسته‌بندی "${saved.title}" و انتساب مدیر`,
       status: 'SUCCESS',
     });
+
+    // Sync to MySQL backend
+    if (typeof window !== 'undefined') {
+      fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(saved),
+      }).catch(() => {});
+    }
+
     return saved;
   }
 
@@ -331,6 +341,11 @@ class StorageService {
     const target = this.categories.find(c => c.id === id);
     this.categories = this.categories.filter(c => c.id !== id);
     setToStorage(STORAGE_KEYS.CATEGORIES, this.categories);
+
+    // Sync to MySQL backend
+    if (typeof window !== 'undefined') {
+      fetch(`/api/categories/${id}`, { method: 'DELETE' }).catch(() => {});
+    }
 
     // If there are ads in this category, reassign them to the first available category
     if (this.categories.length > 0) {
@@ -480,6 +495,15 @@ class StorageService {
     this.ads.unshift(newAd);
     setToStorage(STORAGE_KEYS.ADS, this.ads);
 
+    // Sync to MySQL backend
+    if (typeof window !== 'undefined') {
+      fetch('/api/ads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newAd),
+      }).catch(() => {});
+    }
+
     this.addAuditLog({
       action: 'CREATE_AD',
       details: `ثبت آگهی جدید "${newAd.title}" ${hasBadgeRequest ? '(با درخواست نشان‌دار فوری) ' : ''}با وضعیت ${newAd.status === 'APPROVED' ? 'تایید خودکار' : 'در انتظار بررسی مدیر'}`,
@@ -513,6 +537,16 @@ class StorageService {
 
     if (updatedAd) {
       setToStorage(STORAGE_KEYS.ADS, this.ads);
+
+      // Sync to MySQL backend
+      if (typeof window !== 'undefined') {
+        fetch(`/api/ads/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates),
+        }).catch(() => {});
+      }
+
       const statusLabel =
         updatedAd.status === 'APPROVED'
           ? 'تایید شده'
@@ -538,6 +572,7 @@ class StorageService {
     const user = this.getCurrentUser();
     let adTitle = id;
     let badgeOutcomeText = '';
+    let updatedPayload: any = {};
 
     this.ads = this.ads.map(ad => {
       if (ad.id === id) {
@@ -557,6 +592,13 @@ class StorageService {
           }
         }
 
+        updatedPayload = {
+          status,
+          isUrgent,
+          badgeApproved,
+          rejectionReason: reason || ad.rejectionReason,
+        };
+
         return {
           ...ad,
           status,
@@ -570,6 +612,15 @@ class StorageService {
       return ad;
     });
     setToStorage(STORAGE_KEYS.ADS, this.ads);
+
+    // Sync to MySQL backend
+    if (typeof window !== 'undefined') {
+      fetch(`/api/ads/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedPayload),
+      }).catch(() => {});
+    }
 
     const action = status === 'APPROVED' ? 'APPROVE_AD' : (status === 'REJECTED' ? 'REJECT_AD' : 'UPDATE_AD');
     let details = `${status === 'APPROVED' ? 'تایید' : 'رد'} آگهی "${adTitle}"`;
@@ -593,6 +644,11 @@ class StorageService {
     this.ads = this.ads.filter(a => a.id !== id);
     setToStorage(STORAGE_KEYS.ADS, this.ads);
 
+    // Sync to MySQL backend
+    if (typeof window !== 'undefined') {
+      fetch(`/api/ads/${id}`, { method: 'DELETE' }).catch(() => {});
+    }
+
     this.addAuditLog({
       action: 'DELETE_AD',
       details: `حذف آگهی "${ad?.title || id}"`,
@@ -603,6 +659,15 @@ class StorageService {
   incrementViews(id: string): void {
     this.ads = this.ads.map(a => a.id === id ? { ...a, viewsCount: a.viewsCount + 1 } : a);
     setToStorage(STORAGE_KEYS.ADS, this.ads);
+
+    const found = this.ads.find(a => a.id === id);
+    if (found && typeof window !== 'undefined') {
+      fetch(`/api/ads/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ viewsCount: found.viewsCount }),
+      }).catch(() => {});
+    }
   }
 
   incrementContactViews(id: string): void {
@@ -729,6 +794,128 @@ class StorageService {
       return {
         success: false,
         message: `خطا در ایجاد جداول: ${err.message}`,
+      };
+    }
+  }
+
+  async syncWithMySQL(): Promise<{ success: boolean; message: string; adsCount: number; categoriesCount: number; wasEmpty?: boolean }> {
+    try {
+      const res = await fetch('/api/mysql/data');
+      if (!res.ok) {
+        throw new Error(`خطای سرور HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.message || 'خطا در دریافت داده‌ها');
+      }
+
+      const mysqlAds = data.ads || [];
+      const mysqlCats = data.categories || [];
+      const mysqlUsers = data.users || [];
+      const mysqlLogs = data.auditLogs || [];
+
+      // If MySQL has records, populate local state with database truth
+      if (mysqlCats.length > 0 || mysqlAds.length > 0) {
+        this.categories = mysqlCats;
+        setToStorage(STORAGE_KEYS.CATEGORIES, this.categories);
+
+        this.ads = mysqlAds.map((a: any) => {
+          const createdDate = a.createdAt ? new Date(a.createdAt) : new Date();
+          const expiryDate = new Date(createdDate.getTime() + 30 * 24 * 3600 * 1000);
+          return {
+            ...a,
+            createdAtShamsi: a.createdAtShamsi || formatJalaliDate(createdDate, 'short'),
+            expiryDateShamsi: a.expiryDateShamsi || formatJalaliDate(expiryDate, 'short'),
+          };
+        });
+        setToStorage(STORAGE_KEYS.ADS, this.ads);
+
+        if (mysqlUsers.length > 0) {
+          this.users = mysqlUsers;
+          setToStorage(STORAGE_KEYS.USERS, this.users);
+        }
+
+        if (mysqlLogs.length > 0) {
+          this.auditLogs = mysqlLogs.map((l: any) => {
+            const logDate = l.timestamp ? new Date(l.timestamp) : new Date();
+            return {
+              ...l,
+              timestampShamsi: l.timestampShamsi || formatJalaliDate(logDate, 'short'),
+            };
+          });
+          setToStorage(STORAGE_KEYS.AUDIT_LOGS, this.auditLogs);
+        }
+
+        return {
+          success: true,
+          message: `اطلاعات با موفقیت از پایگاه داده MySQL فراخوانی شد (${mysqlAds.length} آگهی و ${mysqlCats.length} دسته‌بندی).`,
+          adsCount: mysqlAds.length,
+          categoriesCount: mysqlCats.length,
+          wasEmpty: false,
+        };
+      } else {
+        // Tables exist but are empty
+        return {
+          success: true,
+          message: 'جداول پایگاه داده MySQL خالی هستند. می‌توانید با دکمه زیر داده‌های اولیه را به MySQL منتقل کنید.',
+          adsCount: 0,
+          categoriesCount: 0,
+          wasEmpty: true,
+        };
+      }
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `عدم امکان دریافت داده از MySQL: ${err.message}`,
+        adsCount: 0,
+        categoriesCount: 0,
+      };
+    }
+  }
+
+  async seedToMySQL(): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await fetch('/api/mysql/seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          users: this.users,
+          categories: this.categories,
+          ads: this.ads,
+          auditLogs: this.auditLogs,
+        }),
+      });
+      const data = await res.json();
+      return data;
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `خطا در ارسال داده‌ها به MySQL: ${err.message}`,
+      };
+    }
+  }
+
+  async getMySQLStats(): Promise<{
+    success: boolean;
+    connected: boolean;
+    adsCount: number;
+    categoriesCount: number;
+    usersCount: number;
+    auditLogsCount: number;
+    message?: string;
+  }> {
+    try {
+      const res = await fetch('/api/mysql/stats');
+      return await res.json();
+    } catch (err: any) {
+      return {
+        success: false,
+        connected: false,
+        adsCount: 0,
+        categoriesCount: 0,
+        usersCount: 0,
+        auditLogsCount: 0,
+        message: err.message,
       };
     }
   }
