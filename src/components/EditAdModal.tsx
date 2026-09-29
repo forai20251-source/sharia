@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Ad, Category, AdStatus } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
+import { OFFLINE_IMG_DEFAULT } from '../data/offlineImages';
 import {
   toPersianDigits,
   formatPrice,
@@ -130,7 +131,7 @@ export const EditAdModal: React.FC<EditAdModalProps> = ({
       badgeApproved: ad.badgeRequested ? isUrgent : (isUrgent ? true : ad.badgeApproved),
       status,
       rejectionReason: status === 'REJECTED' ? rejectionReason.trim() : undefined,
-      images: images.length > 0 ? images : [currentCategory?.defaultImage || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80'],
+      images: images.length > 0 ? images : [currentCategory?.defaultImage || OFFLINE_IMG_DEFAULT],
       customFields,
     };
 

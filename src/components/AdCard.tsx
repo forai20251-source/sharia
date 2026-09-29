@@ -3,6 +3,8 @@ import { Bookmark, Clock, MapPin, Sparkles, CheckCircle, Flame, Eye } from 'luci
 import { Ad, Category } from '../types';
 import { formatPrice, formatPersianRelativeTime, toPersianDigits } from '../utils/jalali';
 
+import { OFFLINE_IMG_DEFAULT } from '../data/offlineImages';
+
 interface AdCardProps {
   ad: Ad;
   category?: Category;
@@ -41,7 +43,7 @@ export const AdCard: React.FC<AdCardProps> = ({
   const isDefaultCategoryImage = (!ad.images || ad.images.length === 0 || !ad.images[0]) && !!category?.defaultImage;
   const mainImage = ad.images && ad.images.length > 0 && ad.images[0]
     ? ad.images[0]
-    : category?.defaultImage || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=600&auto=format&fit=crop&q=80';
+    : category?.defaultImage || OFFLINE_IMG_DEFAULT;
 
   return (
     <div

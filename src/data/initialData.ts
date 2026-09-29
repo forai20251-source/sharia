@@ -1,5 +1,12 @@
 import { User, Category, Ad, ActiveDirectoryConfig, MySQLConfig, AuditLog } from '../types';
 import { MALE_FACELESS_AVATARS } from './defaultAvatars';
+import {
+  OFFLINE_IMG_VEHICLE,
+  OFFLINE_IMG_REAL_ESTATE,
+  OFFLINE_IMG_DIGITAL,
+  OFFLINE_IMG_OFFICE,
+  OFFLINE_IMG_SERVICES,
+} from './offlineImages';
 
 export const INITIAL_USERS: User[] = [
   {
@@ -94,7 +101,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     managerName: 'سارا محمدی',
     managerDepartment: 'ترابری و خدمات ناوگان',
     allowAutoApprove: false,
-    defaultImage: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80',
+    defaultImage: OFFLINE_IMG_VEHICLE,
     fields: [
       {
         id: 'f-v-model',
@@ -177,7 +184,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     managerName: 'علی رستمی',
     managerDepartment: 'مدیریت املاک و پشتیبانی سازمانی',
     allowAutoApprove: false,
-    defaultImage: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800&auto=format&fit=crop&q=80',
+    defaultImage: OFFLINE_IMG_REAL_ESTATE,
     fields: [
       {
         id: 'f-r-area',
@@ -258,7 +265,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     managerName: 'مریم اکبری',
     managerDepartment: 'مرکز داده و زیرساخت سخت‌افزار',
     allowAutoApprove: true,
-    defaultImage: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&auto=format&fit=crop&q=80',
+    defaultImage: OFFLINE_IMG_DIGITAL,
     fields: [
       {
         id: 'f-d-brand',
@@ -316,7 +323,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     managerName: 'علی رستمی',
     managerDepartment: 'مدیریت املاک و پشتیبانی سازمانی',
     allowAutoApprove: true,
-    defaultImage: 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?w=800&auto=format&fit=crop&q=80',
+    defaultImage: OFFLINE_IMG_OFFICE,
     fields: [
       {
         id: 'f-o-type',
@@ -364,7 +371,7 @@ export const INITIAL_CATEGORIES: Category[] = [
     managerName: 'علیرضا تهرانی',
     managerDepartment: 'مدیریت فناوری اطلاعات و امنیت شبکه',
     allowAutoApprove: true,
-    defaultImage: 'https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=800&auto=format&fit=crop&q=80',
+    defaultImage: OFFLINE_IMG_SERVICES,
     fields: [
       {
         id: 'f-s-type',
@@ -405,10 +412,7 @@ export const INITIAL_ADS: Ad[] = [
     isUrgent: true,
     badgeRequested: true,
     badgeApproved: true,
-    images: [
-      'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=800&auto=format&fit=crop&q=80',
-    ],
+    images: [OFFLINE_IMG_VEHICLE],
     city: 'تهران',
     departmentLocation: 'پارکینگ شماره ۲ - ساختمان فناوری',
     authorId: 'usr-sara',
@@ -441,10 +445,7 @@ export const INITIAL_ADS: Ad[] = [
     isAgreementPrice: true,
     isFree: false,
     isUrgent: false,
-    images: [
-      'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&auto=format&fit=crop&q=80',
-    ],
+    images: [OFFLINE_IMG_REAL_ESTATE],
     city: 'تهران',
     departmentLocation: 'منطقه ۶ - بلوار کشاورز',
     authorId: 'usr-ali',
@@ -477,10 +478,7 @@ export const INITIAL_ADS: Ad[] = [
     isAgreementPrice: false,
     isFree: false,
     isUrgent: false,
-    images: [
-      'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=800&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&auto=format&fit=crop&q=80',
-    ],
+    images: [OFFLINE_IMG_DIGITAL],
     city: 'تهران',
     departmentLocation: 'ساختمان مروارید - اتاق ۴۰۲',
     authorId: 'usr-maryam',
@@ -511,9 +509,7 @@ export const INITIAL_ADS: Ad[] = [
     isAgreementPrice: false,
     isFree: false,
     isUrgent: true,
-    images: [
-      'https://images.unsplash.com/photo-1580481077194-0f2c4a96b27e?w=800&auto=format&fit=crop&q=80',
-    ],
+    images: [OFFLINE_IMG_OFFICE],
     city: 'تهران',
     departmentLocation: 'ساختمان مرکزی - طبقه ۲ مالی',
     authorId: 'usr-reza',
@@ -543,9 +539,7 @@ export const INITIAL_ADS: Ad[] = [
     isAgreementPrice: true,
     isFree: false,
     isUrgent: false,
-    images: [
-      'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=800&auto=format&fit=crop&q=80',
-    ],
+    images: [OFFLINE_IMG_SERVICES],
     city: 'تهران',
     departmentLocation: 'ایستگاه مبدا: میدان پونک',
     authorId: 'usr-admin',
@@ -574,10 +568,7 @@ export const INITIAL_ADS: Ad[] = [
     isAgreementPrice: false,
     isFree: false,
     isUrgent: false,
-    images: [
-      'https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?w=800&auto=format&fit=crop&q=80',
-      'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=800&auto=format&fit=crop&q=80',
-    ],
+    images: [OFFLINE_IMG_VEHICLE],
     city: 'تهران',
     departmentLocation: 'پارکینگ مهمانان VIP',
     authorId: 'usr-sara',
@@ -611,9 +602,7 @@ export const INITIAL_ADS: Ad[] = [
     isFree: false,
     isUrgent: true,
     badgeRequested: true,
-    images: [
-      'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=800&auto=format&fit=crop&q=80',
-    ],
+    images: [OFFLINE_IMG_DIGITAL],
     city: 'تهران',
     departmentLocation: 'ساختمان مروارید - طبقه سوم',
     authorId: 'usr-maryam',
@@ -645,9 +634,7 @@ export const INITIAL_ADS: Ad[] = [
     isFree: false,
     isUrgent: true,
     badgeRequested: true,
-    images: [
-      'https://images.unsplash.com/photo-1524758631624-e2822e304c36?w=800&auto=format&fit=crop&q=80',
-    ],
+    images: [OFFLINE_IMG_OFFICE],
     city: 'تهران',
     departmentLocation: 'ساختمان مرکزی - طبقه ۲ پشتیبانی',
     authorId: 'usr-reza',

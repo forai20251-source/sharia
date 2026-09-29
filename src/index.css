@@ -4,7 +4,7 @@
 
 @layer base {
   body {
-    font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Vazirmatn', Tahoma, 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
     @apply transition-colors duration-200;
   }
 }

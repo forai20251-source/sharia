@@ -68,6 +68,7 @@ import {
 import { EditAdModal } from '../EditAdModal';
 import { toPersianDigits, formatPersianNumber, formatJalaliDate } from '../../utils/jalali';
 import { MYSQL_SCHEMA_SQL, NUXT_SERVER_CODE_GUIDE } from '../../data/mysqlSchema';
+import { OFFLINE_PRESET_IMAGES, OFFLINE_IMG_DEFAULT } from '../../data/offlineImages';
 
 export const CATEGORY_ICON_OPTIONS = [
   { name: 'Package', label: 'لوازم و کالا', icon: Package },
@@ -104,20 +105,7 @@ export const CATEGORY_COLOR_OPTIONS = [
   { label: 'صورتی گرم', value: 'from-pink-500 to-rose-600', class: 'bg-gradient-to-r from-pink-500 to-rose-600' },
 ];
 
-export const PRESET_CATEGORY_IMAGES = [
-  { label: 'خودرو سواری', categoryTag: 'وسایل نقلیه', url: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80' },
-  { label: 'خودرو مشکی لوکس', categoryTag: 'وسایل نقلیه', url: 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=800&auto=format&fit=crop&q=80' },
-  { label: 'آپارتمان مسکونی', categoryTag: 'املاک', url: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800&auto=format&fit=crop&q=80' },
-  { label: 'دفتر کار و اتاق جلسات', categoryTag: 'املاک', url: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&auto=format&fit=crop&q=80' },
-  { label: 'لپ‌تاپ مهندسی IT', categoryTag: 'دیجیتال', url: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&auto=format&fit=crop&q=80' },
-  { label: 'گوشی موبایل هوشمند', categoryTag: 'دیجیتال', url: 'https://images.unsplash.com/photo-1511707171634-5f897ff02560?w=800&auto=format&fit=crop&q=80' },
-  { label: 'صندلی ارگونومیک اداری', categoryTag: 'اداری', url: 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?w=800&auto=format&fit=crop&q=80' },
-  { label: 'میز کار و ایستگاه اداری', categoryTag: 'اداری', url: 'https://images.unsplash.com/photo-1497215728101-856f4ea42174?w=800&auto=format&fit=crop&q=80' },
-  { label: 'خدمات و هم‌پیمایی', categoryTag: 'خدمات', url: 'https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=800&auto=format&fit=crop&q=80' },
-  { label: 'آموزش و یادگیری', categoryTag: 'خدمات', url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=800&auto=format&fit=crop&q=80' },
-  { label: 'تجهیزات و ابزار صنعتی', categoryTag: 'فنی', url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80' },
-  { label: 'کتاب و اقلام فرهنگی', categoryTag: 'فرهنگی', url: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=800&auto=format&fit=crop&q=80' },
-];
+export const PRESET_CATEGORY_IMAGES = OFFLINE_PRESET_IMAGES;
 
 interface AdminModalProps {
   currentUser: User | null;
@@ -1123,7 +1111,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         <div className="flex items-start gap-3">
                           <div className="relative shrink-0">
                             <img
-                              src={ad.images?.[0] || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=200&auto=format&fit=crop&q=80'}
+                              src={ad.images?.[0] || OFFLINE_IMG_DEFAULT}
                               alt=""
                               className="w-16 h-16 rounded-xl object-cover border border-slate-200"
                             />
@@ -1715,13 +1703,13 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                           <div>
                             <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                              یا درج آدرس اینترنتی تصویر (URL):
+                              یا درج آدرس تصویر (URL / Data URI):
                             </label>
                             <input
-                              type="url"
+                              type="text"
                               value={catFormDefaultImage.startsWith('data:') ? '' : catFormDefaultImage}
                               onChange={e => setCatFormDefaultImage(e.target.value)}
-                              placeholder="https://images.unsplash.com/..."
+                              placeholder="/images/example.jpg یا آدرس محلی"
                               className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 font-mono text-left"
                               dir="ltr"
                             />

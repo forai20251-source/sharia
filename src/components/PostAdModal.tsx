@@ -20,6 +20,7 @@ import {
 import { Category, Ad, User } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
 import { getCurrentJalali, toPersianDigits, formatPersianNumber, getJalaliDateFromNow } from '../utils/jalali';
+import { OFFLINE_PRESET_IMAGES } from '../data/offlineImages';
 
 interface PostAdModalProps {
   categories: Category[];
@@ -36,16 +37,7 @@ interface ValidationError {
   message: string;
 }
 
-const PRESET_IMAGE_OPTIONS = [
-  { label: 'خودرو سفید', url: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80' },
-  { label: 'خودرو مشکی لوکس', url: 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=800&auto=format&fit=crop&q=80' },
-  { label: 'آپارتمان سالن نورگیر', url: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop&q=80' },
-  { label: 'دفتر کار و اتاق اداری', url: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&auto=format&fit=crop&q=80' },
-  { label: 'لپ‌تاپ مهندسی', url: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=800&auto=format&fit=crop&q=80' },
-  { label: 'گوشی موبایل هوشمند', url: 'https://images.unsplash.com/photo-1511707171634-5f897ff02560?w=800&auto=format&fit=crop&q=80' },
-  { label: 'صندلی ارگونومیک اداری', url: 'https://images.unsplash.com/photo-1580481077194-0f2c4a96b27e?w=800&auto=format&fit=crop&q=80' },
-  { label: 'سرویس و خدمات رفت‌وآمد', url: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=800&auto=format&fit=crop&q=80' },
-];
+const PRESET_IMAGE_OPTIONS = OFFLINE_PRESET_IMAGES;
 
 export const PostAdModal: React.FC<PostAdModalProps> = ({
   categories,

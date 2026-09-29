@@ -1,6 +1,7 @@
 import { User, Category, CategoryField, Ad, AdStatus, ActiveDirectoryConfig, MySQLConfig, AuditLog } from '../types';
 import { INITIAL_USERS, INITIAL_CATEGORIES, INITIAL_ADS, INITIAL_AD_CONFIG, INITIAL_MYSQL_CONFIG, INITIAL_AUDIT_LOGS } from '../data/initialData';
 import { MALE_FACELESS_AVATARS } from '../data/defaultAvatars';
+import { OFFLINE_IMG_DEFAULT } from '../data/offlineImages';
 import { formatJalaliDate } from '../utils/jalali';
 
 const STORAGE_KEYS = {
@@ -474,7 +475,7 @@ class StorageService {
       badgeRequested: hasBadgeRequest,
       badgeApproved: undefined,
       images: adData.images && adData.images.length > 0 ? adData.images : [
-        category?.defaultImage || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80'
+        category?.defaultImage || OFFLINE_IMG_DEFAULT
       ],
       city: adData.city || 'تهران',
       departmentLocation: adData.departmentLocation || user.department || 'ساختمان مرکزی',

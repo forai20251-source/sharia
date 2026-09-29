@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Ad, Category, User } from '../types';
 import { EditAdModal } from './EditAdModal';
+import { OFFLINE_IMG_DEFAULT } from '../data/offlineImages';
 import {
   formatPrice,
   formatJalaliDate,
@@ -56,7 +57,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   const isDefaultCategoryImage = (!currentAd.images || currentAd.images.length === 0 || !currentAd.images[0]) && !!category?.defaultImage;
   const images = currentAd.images && currentAd.images.length > 0 && currentAd.images[0]
     ? currentAd.images
-    : [category?.defaultImage || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80'];
+    : [category?.defaultImage || OFFLINE_IMG_DEFAULT];
 
   // Check if current user can moderate this ad
   const canModerate =
