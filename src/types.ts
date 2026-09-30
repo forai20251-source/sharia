@@ -14,6 +14,7 @@ export interface User {
   avatar?: string;
   lastLoginShamsi?: string;
   adsCount?: number;
+  customMonthlyQuota?: number; // سهمیه اختصاصی ماهانه این کاربر (تعیین شده توسط مدیر)
   status: 'ACTIVE' | 'SUSPENDED';
 }
 
@@ -101,7 +102,8 @@ export interface AuditLog {
     | 'UPDATE_CATEGORY'
     | 'DELETE_CATEGORY'
     | 'ADD_FIELD'
-    | 'CONFIG_CHANGE';
+    | 'CONFIG_CHANGE'
+    | 'UPDATE_POLICY';
   details: string;
   ipAddress: string;
   timestamp: string;
@@ -152,4 +154,56 @@ export interface FilterState {
   onlyWithImages: boolean;
   sortBy: 'NEWEST' | 'PRICE_ASC' | 'PRICE_DESC' | 'VIEWS';
   customFieldFilters: Record<string, any>;
+}
+
+// Enterprise Ad Posting Restrictions & Monthly Quotas Policy
+export interface AdPostingPolicy {
+  // فعال یا غیرفعال بودن کلی سامانه سهمیه‌بندی و محدودیت‌ها
+  enabled: boolean;
+  // سقف تعداد آگهی در هر ماه شمسی برای هر کاربر (پیش‌فرض ۵ عدد)
+  maxAdsPerSolarMonth: number;
+  // سقف آگهی‌های همزمان فعال یا در انتظار کاربر (پیش‌فرض ۳ عدد)
+  maxActiveAdsPerUser: number;
+  // سقف درخواست نشان فوری در هر ماه شمسی (پیش‌فرض ۲ عدد)
+  maxUrgentBadgesPerMonth: number;
+  // حداقل فاصله زمانی بین دو ثبت آگهی متوالی (بر حسب ساعت: ۰ = بدون محدودیت، ۱، ۲، ۶، ۱۲، ۲۴)
+  coolDownHours: number;
+  // معافیت مدیران ارشد و مدیران دسته‌ها از محدودیت‌ها
+  bypassForAdminsAndManagers: boolean;
+  // حداقل و حداکثر طول کاراکتر عنوان آگهی
+  minTitleLength: number;
+  maxTitleLength: number;
+  // سهمیه‌های اختصاصی برای پرسنل خاص (شناسه کاربر -> سقف تعداد ماهانه)
+  userCustomQuotas: Record<string, number>;
+}
+
+// User's Real-time Quota and Restrictions Status
+export interface UserQuotaStatus {
+  // آیا کاربر در حال حاضر از درج آگهی منع شده است؟
+  isBlocked: boolean;
+  // علت منع یا محدودیت برای نمایش به کاربر
+  blockReason?: string;
+  // مشخصات ماه شمسی جاری
+  solarMonthName: string; // e.g. "مهر ۱۴۰۳"
+  solarMonthKey: string; // e.g. "1403/07"
+  // آمار آگهی‌های ثبت شده در ماه شمسی جاری
+  adsUsedThisMonth: number;
+  maxAllowedThisMonth: number;
+  remainingThisMonth: number;
+  // آمار آگهی‌های همزمان فعال
+  activeAdsCount: number;
+  maxActiveAllowed: number;
+  remainingActive: number;
+  // آمار نشان فوری
+  urgentUsedThisMonth: number;
+  maxUrgentAllowed: number;
+  remainingUrgent: number;
+  canRequestUrgent: boolean;
+  // وضعیت فاصله زمانی (کول‌داون)
+  isInCooldown: boolean;
+  cooldownRemainingMinutes?: number;
+  // آیا کاربر به دلیل دسترسی مدیریتی معاف از سهمیه است؟
+  isBypassed: boolean;
+  // آیا سهمیه اختصاصی دارد؟
+  hasCustomQuota: boolean;
 }

@@ -63,6 +63,9 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   const [adGroupsInput, setAdGroupsInput] = useState(
     (targetUser.adGroups || []).join('، ')
   );
+  const [customMonthlyQuota, setCustomMonthlyQuota] = useState<number | undefined>(
+    targetUser.customMonthlyQuota
+  );
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
@@ -79,6 +82,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     setStatus(targetUser.status);
     setManagedCategoryIds(targetUser.managedCategoryIds || []);
     setAdGroupsInput((targetUser.adGroups || []).join('، '));
+    setCustomMonthlyQuota(targetUser.customMonthlyQuota);
     setErrors({});
     setIsSavedSuccess(false);
   }, [targetUser, isOpen]);
@@ -154,6 +158,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       updates.status = status;
       updates.managedCategoryIds = role === 'CATEGORY_MANAGER' ? managedCategoryIds : [];
       updates.adGroups = adGroups.length > 0 ? adGroups : targetUser.adGroups;
+      updates.customMonthlyQuota = customMonthlyQuota && customMonthlyQuota > 0 ? customMonthlyQuota : undefined;
     }
 
     onSave(targetUser.id, updates);
@@ -496,6 +501,23 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   dir="ltr"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 text-right outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
                   placeholder="Domain Users, IT_Security"
+                />
+              </div>
+
+              {/* Custom Monthly Solar Quota */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>سهمیه ماهانه اختصاصی ثبت آگهی (ماه شمسی)</span>
+                  <span className="text-[10px] text-slate-500 font-normal">خالی = سقف عمومی سامانه</span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={customMonthlyQuota !== undefined ? customMonthlyQuota : ''}
+                  onChange={e => setCustomMonthlyQuota(e.target.value === '' ? undefined : Number(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                  placeholder="مثال: ۱۰ (سقف ماهانه)"
                 />
               </div>
             </div>

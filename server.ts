@@ -3,6 +3,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mysql from 'mysql2/promise';
+import net from 'net';
+import ldap from 'ldapjs';
 
 dotenv.config();
 
@@ -15,6 +17,63 @@ function cleanHost(rawHost: any): string {
   let cleaned = rawHost.replace(/\s*\(.*?\)/g, '').trim();
   if (cleaned.toLowerCase() === 'localhost') return '127.0.0.1';
   return cleaned || '127.0.0.1';
+}
+
+// Global server-side Active Directory configuration
+let serverAdConfig: any = {
+  serverHost: cleanHost(process.env.AD_HOST || '192.168.1.10'),
+  port: Number(process.env.AD_PORT) || 389,
+  useSsl: process.env.AD_SSL === 'true',
+  baseDn: (process.env.AD_BASE_DN || 'DC=company,DC=local').trim(),
+  domainName: (process.env.AD_DOMAIN || 'CORP').trim(),
+  bindUserDn: (process.env.AD_BIND_USER || '').trim(),
+  bindPassword: (process.env.AD_BIND_PASSWORD || '').trim(),
+  userFilter: process.env.AD_USER_FILTER || '(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))',
+  groupAdminDn: process.env.AD_GROUP_ADMIN || 'CN=IT_Admins,OU=SecurityGroups,DC=company,DC=local',
+  groupManagerDn: process.env.AD_GROUP_MANAGER || 'CN=Category_Managers,OU=SecurityGroups,DC=company,DC=local',
+  autoCreateUser: true,
+};
+
+// Real TCP socket probe to verify if the server and port are genuinely reachable
+function testTcpConnection(
+  host: string,
+  port: number,
+  timeoutMs = 3500
+): Promise<{ reachable: boolean; latencyMs: number; error?: string }> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const socket = new net.Socket();
+    let settled = false;
+
+    const cleanup = () => {
+      if (!settled) {
+        settled = true;
+        socket.destroy();
+      }
+    };
+
+    socket.setTimeout(timeoutMs);
+
+    socket.on('connect', () => {
+      const latencyMs = Date.now() - start;
+      cleanup();
+      resolve({ reachable: true, latencyMs });
+    });
+
+    socket.on('timeout', () => {
+      const latencyMs = Date.now() - start;
+      cleanup();
+      resolve({ reachable: false, latencyMs, error: 'ETIMEDOUT: مهلت اتصال به سرور به پایان رسید.' });
+    });
+
+    socket.on('error', (err: any) => {
+      const latencyMs = Date.now() - start;
+      cleanup();
+      resolve({ reachable: false, latencyMs, error: err.message });
+    });
+
+    socket.connect(port, host);
+  });
 }
 
 // Get effective DB configuration, prioritizing server-side .env file
@@ -35,6 +94,364 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json());
+
+  // ----------------------------------------------------
+  // REAL ACTIVE DIRECTORY (LDAP) ENDPOINTS
+  // ----------------------------------------------------
+
+  // Get current active AD config
+  app.get('/api/ad/config', (req, res) => {
+    res.json({
+      serverHost: serverAdConfig.serverHost,
+      port: serverAdConfig.port,
+      useSsl: serverAdConfig.useSsl,
+      baseDn: serverAdConfig.baseDn,
+      domainName: serverAdConfig.domainName,
+      bindUserDn: serverAdConfig.bindUserDn,
+      hasBindPassword: Boolean(serverAdConfig.bindPassword),
+      userFilter: serverAdConfig.userFilter,
+      groupAdminDn: serverAdConfig.groupAdminDn,
+      groupManagerDn: serverAdConfig.groupManagerDn,
+      autoCreateUser: serverAdConfig.autoCreateUser,
+    });
+  });
+
+  // Fast live probe of Active Directory reachability
+  app.get('/api/ad/status', async (req, res) => {
+    const host = cleanHost(serverAdConfig.serverHost);
+    const port = Number(serverAdConfig.port || 389);
+    const tcp = await testTcpConnection(host, port, 1500);
+    res.json({
+      connected: tcp.reachable,
+      serverHost: host,
+      port,
+      latencyMs: tcp.latencyMs,
+      error: tcp.error || null,
+    });
+  });
+
+  // Save active AD config
+  app.post('/api/ad/config', (req, res) => {
+    const body = req.body || {};
+    serverAdConfig = {
+      ...serverAdConfig,
+      ...body,
+      serverHost: cleanHost(body.serverHost || serverAdConfig.serverHost),
+      port: Number(body.port || serverAdConfig.port || 389),
+      useSsl: Boolean(body.useSsl ?? serverAdConfig.useSsl),
+    };
+    if (body.bindPassword && !body.bindPassword.includes('••••')) {
+      serverAdConfig.bindPassword = body.bindPassword;
+    }
+    res.json({ success: true, message: 'پیکربندی اکتیو دایرکتوری در سرور ذخیره شد.' });
+  });
+
+  // Test Real Connection to Active Directory Server
+  app.post('/api/ad/test', async (req, res) => {
+    const body = req.body || {};
+    const host = cleanHost(body.serverHost || serverAdConfig.serverHost);
+    const port = Number(body.port || serverAdConfig.port || 389);
+    const useSsl = Boolean(body.useSsl ?? serverAdConfig.useSsl);
+    const domainName = (body.domainName || serverAdConfig.domainName || 'CORP').trim();
+    const bindUserDn = (body.bindUserDn || serverAdConfig.bindUserDn || '').trim();
+    const bindPassword = (body.bindPassword || body.bindPasswordMasked || serverAdConfig.bindPassword || '').trim();
+    const baseDn = (body.baseDn || serverAdConfig.baseDn || '').trim();
+
+    // 1. Test genuine TCP reachability
+    const tcp = await testTcpConnection(host, port, 3500);
+    if (!tcp.reachable) {
+      return res.json({
+        success: false,
+        connected: false,
+        code: 'TCP_CONNECT_FAIL',
+        latencyMs: tcp.latencyMs,
+        message: `ارتباط با کنترلر دامنه در آدرس ${host}:${port} برقرار نشد. سرور خاموش است، آدرس IP اشتباه است یا فایروال پورت ${port} را مسدود کرده است (${tcp.error || 'خطا'}).`,
+        details: { host, port, error: tcp.error },
+      });
+    }
+
+    // 2. Real LDAP connection
+    try {
+      const client = ldap.createClient({
+        url: `${useSsl ? 'ldaps' : 'ldap'}://${host}:${port}`,
+        timeout: 5000,
+        connectTimeout: 5000,
+        tlsOptions: { rejectUnauthorized: false },
+      });
+
+      let clientError: any = null;
+      client.on('error', (e) => {
+        clientError = e;
+      });
+
+      // If no bind credentials provided, test LDAP ping
+      if (!bindUserDn || !bindPassword || bindPassword.includes('••••')) {
+        client.search('', { scope: 'base', filter: '(objectClass=*)' }, (searchErr) => {
+          client.unbind(() => {});
+          if (searchErr || clientError) {
+            return res.json({
+              success: false,
+              connected: false,
+              code: 'LDAP_ANON_REJECTED',
+              latencyMs: tcp.latencyMs,
+              message: `پورت ${port} روی سرور ${host} باز است اما سرور اکتیو دایرکتوری دسترسی ناشناس را مسدود کرده است. لطفاً نام کاربری و رمز عبور حساب سرویس (Bind DN) را وارد فرمایید.`,
+              details: { host, port, useSsl },
+            });
+          }
+          return res.json({
+            success: true,
+            connected: true,
+            latencyMs: tcp.latencyMs,
+            message: `پورت ${port} روی سرور ${host} باز است و سرویس LDAP دایرکتوری در حال پاسخگویی است.`,
+            details: { host, port, useSsl, domainName },
+          });
+        });
+        return;
+      }
+
+      let bindPrincipal = bindUserDn;
+      if (!bindPrincipal.toLowerCase().includes('dc=') && !bindPrincipal.includes('\\') && !bindPrincipal.includes('@')) {
+        bindPrincipal = domainName ? `${domainName}\\${bindPrincipal}` : bindPrincipal;
+      }
+
+      client.bind(bindPrincipal, bindPassword, (bindErr) => {
+        client.unbind(() => {});
+        if (bindErr) {
+          const msg = bindErr.message || '';
+          const isInvalidCreds = msg.includes('49') || (bindErr as any).code === 49;
+          return res.json({
+            success: false,
+            connected: false,
+            code: isInvalidCreds ? 'INVALID_BIND_CREDENTIALS' : 'LDAP_BIND_ERROR',
+            latencyMs: tcp.latencyMs,
+            message: isInvalidCreds
+              ? `ارتباط شبکه با سرور ${host}:${port} برقرار است، اما نام کاربری (${bindPrincipal}) یا رمز عبور Bind در اکتیو دایرکتوری نامعتبر است (Error 49 - Invalid Credentials).`
+              : `خطای احراز هویت سرویس اکتیو دایرکتوری: ${msg}`,
+            details: { host, port, bindPrincipal },
+          });
+        }
+
+        return res.json({
+          success: true,
+          connected: true,
+          latencyMs: tcp.latencyMs,
+          message: `ارتباط واقعی با کنترلر دامنه ${host}:${port} تایید شد و حساب اتصال (${bindPrincipal}) با موفقیت در اکتیو دایرکتوری احراز هویت گردید.`,
+          details: { host, port, bindPrincipal, baseDn, useSsl },
+        });
+      });
+    } catch (err: any) {
+      return res.json({
+        success: false,
+        connected: false,
+        code: 'LDAP_CLIENT_ERROR',
+        latencyMs: tcp.latencyMs,
+        message: `خطای کلاینت LDAP: ${err.message}`,
+        details: { host, port },
+      });
+    }
+  });
+
+  // Real Active Directory User Authentication Endpoint
+  app.post('/api/ad/login', async (req, res) => {
+    const { username, password, domain, adConfig } = req.body || {};
+
+    if (!username || typeof username !== 'string' || !username.trim()) {
+      return res.status(400).json({ success: false, message: 'لطفاً نام کاربری ویندوز را وارد نمایید.' });
+    }
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({ success: false, message: 'لطفاً کلمه عبور را وارد نمایید.' });
+    }
+
+    const effectiveConfig = {
+      ...serverAdConfig,
+      ...(adConfig || {}),
+    };
+
+    const host = cleanHost(effectiveConfig.serverHost);
+    const port = Number(effectiveConfig.port || 389);
+    const useSsl = Boolean(effectiveConfig.useSsl);
+    const domainName = (domain || effectiveConfig.domainName || 'CORP').toString().trim().toUpperCase();
+    const baseDn = (effectiveConfig.baseDn || '').toString().trim();
+
+    let cleanUser = username.trim();
+    if (cleanUser.includes('\\')) {
+      cleanUser = cleanUser.split('\\')[1];
+    } else if (cleanUser.includes('@')) {
+      cleanUser = cleanUser.split('@')[0];
+    }
+
+    // 1. Check TCP connection to domain controller
+    const tcp = await testTcpConnection(host, port, 3500);
+    if (!tcp.reachable) {
+      return res.json({
+        success: false,
+        connected: false,
+        code: 'AD_UNREACHABLE',
+        message: `عدم برقراری ارتباط با کنترلر دامنه در آدرس ${host}:${port}: سرور در دسترس نیست یا ارتباط شبکه قطع است (${tcp.error || 'خطا'}).`,
+        error: tcp.error,
+        allowOfflineFallback: true,
+        cleanUser,
+        domainName,
+      });
+    }
+
+    // 2. Perform LDAP bind for this user
+    try {
+      const client = ldap.createClient({
+        url: `${useSsl ? 'ldaps' : 'ldap'}://${host}:${port}`,
+        timeout: 5000,
+        connectTimeout: 5000,
+        tlsOptions: { rejectUnauthorized: false },
+      });
+
+      client.on('error', () => {});
+
+      const userPrincipal = domainName ? `${domainName}\\${cleanUser}` : cleanUser;
+
+      client.bind(userPrincipal, password, (bindErr) => {
+        if (bindErr) {
+          client.unbind(() => {});
+          const msg = bindErr.message || '';
+          const isInvalidCreds = msg.includes('49') || (bindErr as any).code === 49;
+          return res.json({
+            success: false,
+            code: isInvalidCreds ? 'INVALID_CREDENTIALS' : 'LDAP_AUTH_ERROR',
+            message: isInvalidCreds
+              ? `کلمه عبور یا نام کاربری وارد شده در اکتیو دایرکتوری (${userPrincipal}) نامعتبر است.`
+              : `خطا در احراز هویت با اکتیو دایرکتوری: ${msg}`,
+          });
+        }
+
+        const fallbackUserObj = {
+          id: `usr-ad-${cleanUser.toLowerCase()}`,
+          username: `${domainName}\\${cleanUser}`,
+          displayName: cleanUser,
+          email: `${cleanUser.toLowerCase()}@${domainName.toLowerCase()}.local`,
+          department: 'پرسنل سازمان',
+          internalPhone: '',
+          mobilePhone: '',
+          role: 'USER' as const,
+          adGroups: ['Domain Users'],
+          status: 'ACTIVE' as const,
+        };
+
+        if (!baseDn) {
+          client.unbind(() => {});
+          return res.json({
+            success: true,
+            user: fallbackUserObj,
+            message: 'احراز هویت با موفقیت در اکتیو دایرکتوری انجام شد.',
+          });
+        }
+
+        const filter = `(&(objectCategory=person)(objectClass=user)(sAMAccountName=${cleanUser}))`;
+        client.search(baseDn, {
+          filter,
+          scope: 'sub',
+          attributes: ['dn', 'sAMAccountName', 'displayName', 'cn', 'telephoneNumber', 'mobile', 'department', 'mail', 'memberOf'],
+        }, (searchErr, searchRes) => {
+          if (searchErr) {
+            client.unbind(() => {});
+            return res.json({
+              success: true,
+              user: fallbackUserObj,
+              message: 'احراز هویت در اکتیو دایرکتوری تایید شد.',
+            });
+          }
+
+          let foundEntry: any = null;
+
+          searchRes.on('searchEntry', (entry: any) => {
+            foundEntry = entry?.object || entry?.pojo;
+          });
+
+          searchRes.on('error', () => {
+            client.unbind(() => {});
+            return res.json({
+              success: true,
+              user: fallbackUserObj,
+              message: 'احراز هویت با موفقیت انجام شد.',
+            });
+          });
+
+          searchRes.on('end', () => {
+            client.unbind(() => {});
+            if (!foundEntry) {
+              return res.json({
+                success: true,
+                user: fallbackUserObj,
+                message: 'احراز هویت در اکتیو دایرکتوری تایید شد.',
+              });
+            }
+
+            const displayName = foundEntry.displayName || foundEntry.cn || cleanUser;
+            const department = foundEntry.department || 'پرسنل سازمان';
+            const internalPhone = foundEntry.telephoneNumber || foundEntry.ipPhone || '';
+            const mobilePhone = foundEntry.mobile || '';
+            const email = foundEntry.mail || `${cleanUser.toLowerCase()}@${domainName.toLowerCase()}.local`;
+
+            let memberOf: string[] = [];
+            if (Array.isArray(foundEntry.memberOf)) {
+              memberOf = foundEntry.memberOf;
+            } else if (typeof foundEntry.memberOf === 'string') {
+              memberOf = [foundEntry.memberOf];
+            }
+
+            const groupNames = memberOf.map((str: string) => {
+              const m = str.match(/CN=([^,]+)/i);
+              return m ? m[1] : str;
+            });
+
+            let role: 'SUPER_ADMIN' | 'CATEGORY_MANAGER' | 'USER' = 'USER';
+            const adminDn = (effectiveConfig.groupAdminDn || '').toLowerCase();
+            const managerDn = (effectiveConfig.groupManagerDn || '').toLowerCase();
+            const memberOfLower = memberOf.map((m: string) => m.toLowerCase());
+            const groupNamesLower = groupNames.map((g: string) => g.toLowerCase());
+
+            if (
+              (adminDn && memberOfLower.some(g => g.includes(adminDn))) ||
+              groupNamesLower.includes('domain admins') ||
+              groupNamesLower.includes('enterprise admins') ||
+              groupNamesLower.includes('it_admins')
+            ) {
+              role = 'SUPER_ADMIN';
+            } else if (
+              (managerDn && memberOfLower.some(g => g.includes(managerDn))) ||
+              groupNamesLower.includes('category_managers') ||
+              groupNamesLower.includes('app_moderators')
+            ) {
+              role = 'CATEGORY_MANAGER';
+            }
+
+            const realUser = {
+              id: `usr-ad-${cleanUser.toLowerCase()}`,
+              username: `${domainName}\\${cleanUser}`,
+              displayName,
+              email,
+              department,
+              internalPhone,
+              mobilePhone,
+              role,
+              adGroups: groupNames.length > 0 ? groupNames : ['Domain Users'],
+              status: 'ACTIVE' as const,
+            };
+
+            return res.json({
+              success: true,
+              user: realUser,
+              message: `احراز هویت با موفقیت در اکتیو دایرکتوری (${userPrincipal}) انجام شد.`,
+            });
+          });
+        });
+      });
+    } catch (err: any) {
+      return res.json({
+        success: false,
+        code: 'LDAP_ERROR',
+        message: `خطای اتصال به اکتیو دایرکتوری: ${err.message}`,
+      });
+    }
+  });
 
   // Real MySQL Test Connection endpoint
   app.post('/api/mysql/test', async (req, res) => {

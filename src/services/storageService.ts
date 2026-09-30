@@ -1,8 +1,8 @@
-import { User, Category, CategoryField, Ad, AdStatus, ActiveDirectoryConfig, MySQLConfig, AuditLog } from '../types';
-import { INITIAL_USERS, INITIAL_CATEGORIES, INITIAL_ADS, INITIAL_AD_CONFIG, INITIAL_MYSQL_CONFIG, INITIAL_AUDIT_LOGS } from '../data/initialData';
-import { MALE_FACELESS_AVATARS } from '../data/defaultAvatars';
+import { User, Category, CategoryField, Ad, AdStatus, ActiveDirectoryConfig, MySQLConfig, AuditLog, AdPostingPolicy, UserQuotaStatus } from '../types';
+import { INITIAL_USERS, INITIAL_CATEGORIES, INITIAL_ADS, INITIAL_AD_CONFIG, INITIAL_MYSQL_CONFIG, INITIAL_AUDIT_LOGS, INITIAL_AD_POSTING_POLICY } from '../data/initialData';
+import { MALE_FACELESS_AVATARS, DEFAULT_MALE_AVATAR } from '../data/defaultAvatars';
 import { OFFLINE_IMG_DEFAULT } from '../data/offlineImages';
-import { formatJalaliDate } from '../utils/jalali';
+import { formatJalaliDate, getJalaliMonthYear, toPersianDigits } from '../utils/jalali';
 
 const STORAGE_KEYS = {
   USERS: 'divar_users_v1',
@@ -13,6 +13,7 @@ const STORAGE_KEYS = {
   MYSQL_CONFIG: 'divar_mysql_config_v1',
   AUDIT_LOGS: 'divar_audit_logs_v1',
   BOOKMARKS: 'divar_bookmarks_v1',
+  AD_POLICY: 'divar_ad_policy_v1',
 };
 
 function getFromStorage<T>(key: string, fallback: T): T {
@@ -43,6 +44,7 @@ class StorageService {
   private mysqlConfig: MySQLConfig = INITIAL_MYSQL_CONFIG;
   private auditLogs: AuditLog[] = [];
   private bookmarks: string[] = [];
+  private adPolicy: AdPostingPolicy = INITIAL_AD_POSTING_POLICY;
 
   constructor() {
     this.init();
@@ -77,7 +79,20 @@ class StorageService {
     });
     this.ads = getFromStorage<Ad[]>(STORAGE_KEYS.ADS, INITIAL_ADS);
     this.adConfig = getFromStorage<ActiveDirectoryConfig>(STORAGE_KEYS.AD_CONFIG, INITIAL_AD_CONFIG);
+    // Never falsely claim AD is connected without live validation
+    this.adConfig.isConnected = false;
+    if (typeof window !== 'undefined') {
+      fetch('/api/ad/status')
+        .then(res => res.json())
+        .then(status => {
+          this.adConfig.isConnected = Boolean(status.connected);
+        })
+        .catch(() => {
+          this.adConfig.isConnected = false;
+        });
+    }
     this.mysqlConfig = getFromStorage<MySQLConfig>(STORAGE_KEYS.MYSQL_CONFIG, INITIAL_MYSQL_CONFIG);
+    this.adPolicy = getFromStorage<AdPostingPolicy>(STORAGE_KEYS.AD_POLICY, INITIAL_AD_POSTING_POLICY);
     if (this.mysqlConfig && this.mysqlConfig.host) {
       this.mysqlConfig.host = this.mysqlConfig.host.replace(/\s*\(.*?\)/g, '').trim() || '127.0.0.1';
     }
@@ -461,7 +476,34 @@ class StorageService {
     const user = this.currentUser || this.users[0];
     const now = new Date();
 
-    const hasBadgeRequest = adData.badgeRequested !== undefined ? !!adData.badgeRequested : !!adData.isUrgent;
+    // Policy & Quota Enforcement Check
+    const quotaStatus = this.getUserQuotaStatus(user.id);
+    if (quotaStatus.isBlocked) {
+      this.addAuditLog({
+        action: 'CREATE_AD',
+        details: `تلاش ناموفق برای درج آگهی "${adData.title || 'بدون عنوان'}" به علت نقض سهمیه یا سیاست: ${quotaStatus.blockReason}`,
+        status: 'FAILED',
+        userId: user.id,
+        userName: `${user.displayName} (${user.username})`,
+      });
+      throw new Error(quotaStatus.blockReason || 'شما در حال حاضر مجاز به درج آگهی نمی‌باشید.');
+    }
+
+    if (this.adPolicy.enabled && !quotaStatus.isBypassed) {
+      const titleLen = (adData.title || '').trim().length;
+      if (titleLen < this.adPolicy.minTitleLength) {
+        throw new Error(`طول عنوان آگهی نمی‌تواند کمتر از ${toPersianDigits(this.adPolicy.minTitleLength)} کاراکتر باشد.`);
+      }
+      if (titleLen > this.adPolicy.maxTitleLength) {
+        throw new Error(`طول عنوان آگهی نمی‌تواند بیشتر از ${toPersianDigits(this.adPolicy.maxTitleLength)} کاراکتر باشد.`);
+      }
+    }
+
+    let hasBadgeRequest = adData.badgeRequested !== undefined ? !!adData.badgeRequested : !!adData.isUrgent;
+    if (hasBadgeRequest && !quotaStatus.canRequestUrgent && !quotaStatus.isBypassed) {
+      hasBadgeRequest = false;
+    }
+
     const newAd: Ad = {
       id: `ad-${Date.now()}`,
       title: adData.title || '',
@@ -704,33 +746,287 @@ class StorageService {
     this.adConfig = {
       ...this.adConfig,
       ...cfg,
+      isConnected: false,
       lastSyncShamsi: formatJalaliDate(new Date(), 'with-time'),
     };
     setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+
+    if (typeof window !== 'undefined') {
+      fetch('/api/ad/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.adConfig),
+      }).catch(() => {});
+    }
+
     this.addAuditLog({
       action: 'CONFIG_CHANGE',
-      details: `بروزرسانی پیکربندی اکتیو دایرکتوری سرور ${this.adConfig.serverHost}`,
+      details: `بروزرسانی پیکربندی اکتیو دایرکتوری سرور ${this.adConfig.serverHost}:${this.adConfig.port}`,
       status: 'SUCCESS',
     });
     return this.adConfig;
   }
 
-  testActiveDirectoryConnection(): { success: boolean; latencyMs: number; message: string; details: any } {
-    const success = true;
-    const latencyMs = Math.floor(Math.random() * 25) + 12;
-    return {
-      success,
-      latencyMs,
-      message: `ارتباط با کنترلر دامنه ${this.adConfig.serverHost} (پورت ${this.adConfig.port}) با موفقیت برقرار شد. گواهی امنیتی معتبر است و حساب سرویس ${this.adConfig.domainName} تایید گردید.`,
-      details: {
-        server: this.adConfig.serverHost,
-        domain: this.adConfig.domainName,
-        baseDn: this.adConfig.baseDn,
-        kerberosAuth: 'ENABLED',
-        ldapSsl: this.adConfig.useSsl ? 'TLS 1.3' : 'StartTLS',
-        syncedObjects: 1420,
-      },
-    };
+  async testActiveDirectoryConnection(
+    overrideConfig?: Partial<ActiveDirectoryConfig>
+  ): Promise<{ success: boolean; latencyMs: number; message: string; details: any }> {
+    try {
+      const cfg = { ...this.adConfig, ...(overrideConfig || {}) };
+      const res = await fetch('/api/ad/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg),
+      });
+
+      const data = await res.json();
+      const isConnected = Boolean(data.connected);
+
+      this.adConfig.isConnected = isConnected;
+      if (isConnected) {
+        this.adConfig.lastSyncShamsi = formatJalaliDate(new Date(), 'with-time');
+      }
+      setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+
+      this.addAuditLog({
+        action: 'CONFIG_CHANGE',
+        details: isConnected
+          ? `تست موفقیت‌آمیز ارتباط با کنترلر دامنه ${cfg.serverHost}:${cfg.port}`
+          : `تست ناموفق ارتباط با کنترلر دامنه ${cfg.serverHost}:${cfg.port} (${data.message})`,
+        status: isConnected ? 'SUCCESS' : 'FAILED',
+      });
+
+      return {
+        success: isConnected,
+        latencyMs: data.latencyMs || 0,
+        message: data.message || (isConnected ? 'ارتباط با موفقیت برقرار شد.' : 'عدم برقراری ارتباط با سرور دامین'),
+        details: data.details || {},
+      };
+    } catch (err: any) {
+      this.adConfig.isConnected = false;
+      setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+      return {
+        success: false,
+        latencyMs: 0,
+        message: `خطای ارتباطی: ${err.message}`,
+        details: {},
+      };
+    }
+  }
+
+  async checkActiveDirectoryStatus(): Promise<{ connected: boolean; message: string; latencyMs: number; host?: string; port?: number }> {
+    try {
+      const res = await fetch('/api/ad/status');
+      if (!res.ok) {
+        this.adConfig.isConnected = false;
+        setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+        return { connected: false, message: 'سرویس اکتیو دایرکتوری در دسترس نیست', latencyMs: 0 };
+      }
+      const data = await res.json();
+      const connected = Boolean(data.connected);
+      this.adConfig.isConnected = connected;
+      setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+      return {
+        connected,
+        message: connected
+          ? `کنترلر دامنه ${data.serverHost}:${data.port} متصل و فعال است`
+          : (data.error || 'عدم دسترسی به کنترلر دامنه'),
+        latencyMs: data.latencyMs || 0,
+        host: data.serverHost,
+        port: data.port,
+      };
+    } catch (e: any) {
+      this.adConfig.isConnected = false;
+      setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+      return { connected: false, message: `عدم ارتباط با سرور: ${e.message}`, latencyMs: 0 };
+    }
+  }
+
+  async loginWithActiveDirectory(
+    usernameInput: string,
+    passwordInput: string,
+    domainInput?: string,
+    allowOfflineFallback: boolean = true
+  ): Promise<{ success: boolean; user?: User; message: string; isOffline?: boolean }> {
+    const domainName = (domainInput || this.adConfig.domainName || 'CORP').trim().toUpperCase();
+    let cleanUser = usernameInput.trim();
+    if (cleanUser.includes('\\')) {
+      cleanUser = cleanUser.split('\\')[1];
+    } else if (cleanUser.includes('@')) {
+      cleanUser = cleanUser.split('@')[0];
+    }
+
+    try {
+      const res = await fetch('/api/ad/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: usernameInput,
+          password: passwordInput,
+          domain: domainName,
+          adConfig: this.adConfig,
+          allowOfflineFallback,
+        }),
+      });
+
+      const data = await res.json();
+
+      // Case 1: Real Active Directory successfully authenticated user
+      if (data.success && data.user) {
+        this.adConfig.isConnected = true;
+        setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+        const adUser: User = {
+          ...data.user,
+          avatar: data.user.avatar || DEFAULT_MALE_AVATAR,
+          lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
+          status: 'ACTIVE',
+        };
+
+        const existingIdx = this.users.findIndex(
+          u => u.username.toLowerCase() === adUser.username.toLowerCase() || u.id === adUser.id
+        );
+
+        if (existingIdx >= 0) {
+          this.users[existingIdx] = {
+            ...this.users[existingIdx],
+            ...adUser,
+          };
+        } else {
+          this.users.push(adUser);
+        }
+
+        setToStorage(STORAGE_KEYS.USERS, this.users);
+        this.setCurrentUser(adUser);
+
+        this.addAuditLog({
+          action: 'LOGIN_AD',
+          details: `احراز هویت زنده اکتیو دایرکتوری برای کاربر "${adUser.displayName}" (${adUser.username})`,
+          status: 'SUCCESS',
+          userId: adUser.id,
+          userName: `${adUser.displayName} (${adUser.username})`,
+        });
+
+        fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(adUser),
+        }).catch(() => {});
+
+        return { success: true, user: adUser, message: data.message, isOffline: false };
+      }
+
+      // Case 2: AD server is unreachable, but offline directory fallback is permitted
+      if (data.code === 'AD_UNREACHABLE' && allowOfflineFallback) {
+        this.adConfig.isConnected = false;
+        setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+
+        const cleanLower = cleanUser.toLowerCase();
+        let matchedUser = this.users.find(u => {
+          const uName = u.username.toLowerCase();
+          const uClean = uName.includes('\\') ? uName.split('\\')[1] : uName;
+          return (
+            uClean === cleanLower ||
+            uName === `${domainName.toLowerCase()}\\${cleanLower}` ||
+            u.id === `usr-${cleanLower}` ||
+            u.id === `usr-ad-${cleanLower}`
+          );
+        });
+
+        let adUser: User;
+        if (matchedUser) {
+          adUser = {
+            ...matchedUser,
+            lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
+            status: 'ACTIVE',
+          };
+          const idx = this.users.findIndex(u => u.id === adUser.id);
+          if (idx >= 0) {
+            this.users[idx] = adUser;
+          }
+        } else if (this.adConfig.autoCreateUser) {
+          const isAdmin = cleanLower.includes('admin') || cleanLower === 'administrator';
+          adUser = {
+            id: `usr-ad-${cleanLower}-${Date.now().toString(36)}`,
+            username: `${domainName}\\${cleanUser}`,
+            displayName: cleanUser,
+            email: `${cleanLower}@${domainName.toLowerCase()}.local`,
+            department: 'پرسنل سازمان',
+            internalPhone: '',
+            mobilePhone: '',
+            role: isAdmin ? 'SUPER_ADMIN' : 'USER',
+            adGroups: isAdmin ? ['Domain Admins', 'Domain Users'] : ['Domain Users'],
+            avatar: DEFAULT_MALE_AVATAR,
+            status: 'ACTIVE',
+            lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
+          };
+          this.users.push(adUser);
+        } else {
+          return {
+            success: false,
+            message: `کنترلر دامنه اکتیو دایرکتوری در دسترس نیست و حساب کاربری "${cleanUser}" در حافظه محلی سیستم وجود ندارد.`,
+          };
+        }
+
+        setToStorage(STORAGE_KEYS.USERS, this.users);
+        this.setCurrentUser(adUser);
+
+        this.addAuditLog({
+          action: 'LOGIN_AD',
+          details: `ورود کاربر "${adUser.displayName}" (${adUser.username}) در حالت دایرکتوری سازمانی آفلاین (عدم اتصال به سرور دامین ${this.adConfig.serverHost})`,
+          status: 'SUCCESS',
+          userId: adUser.id,
+          userName: `${adUser.displayName} (${adUser.username})`,
+        });
+
+        return {
+          success: true,
+          user: adUser,
+          isOffline: true,
+          message: `ورود موفق در حالت دایرکتوری سازمانی آفلاین (${adUser.username})`,
+        };
+      }
+
+      // Case 3: Other error (e.g. invalid credentials on real AD)
+      this.addAuditLog({
+        action: 'ACCESS_DENIED',
+        details: `تلاش ناموفق برای ورود به اکتیو دایرکتوری با نام کاربری "${usernameInput}": ${data.message}`,
+        status: 'FAILED',
+        userName: usernameInput,
+      });
+
+      return { success: false, message: data.message || 'نام کاربری یا کلمه عبور نامعتبر است.' };
+    } catch (err: any) {
+      this.adConfig.isConnected = false;
+      setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+
+      if (allowOfflineFallback) {
+        const cleanLower = cleanUser.toLowerCase();
+        const matched = this.users.find(u => {
+          const uName = u.username.toLowerCase();
+          const uClean = uName.includes('\\') ? uName.split('\\')[1] : uName;
+          return uClean === cleanLower || uName.includes(cleanLower);
+        });
+
+        if (matched) {
+          const adUser: User = {
+            ...matched,
+            lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
+            status: 'ACTIVE',
+          };
+          this.setCurrentUser(adUser);
+          return {
+            success: true,
+            user: adUser,
+            isOffline: true,
+            message: `ورود آفلاین برای کاربر سازمانی ${adUser.displayName}`,
+          };
+        }
+      }
+
+      return {
+        success: false,
+        message: `خطای شبکه در ارتباط با سرور: ${err.message}`,
+      };
+    }
   }
 
   // MySQL Config
@@ -952,6 +1248,165 @@ class StorageService {
     setToStorage(STORAGE_KEYS.AUDIT_LOGS, this.auditLogs);
   }
 
+  // Ad Posting Policies & Quotas
+  getAdPostingPolicy(): AdPostingPolicy {
+    return { ...this.adPolicy };
+  }
+
+  saveAdPostingPolicy(updates: Partial<AdPostingPolicy>): AdPostingPolicy {
+    this.adPolicy = {
+      ...this.adPolicy,
+      ...updates,
+      userCustomQuotas: {
+        ...(this.adPolicy.userCustomQuotas || {}),
+        ...(updates.userCustomQuotas || {}),
+      },
+    };
+    setToStorage(STORAGE_KEYS.AD_POLICY, this.adPolicy);
+
+    this.addAuditLog({
+      action: 'UPDATE_POLICY',
+      details: `بروزرسانی قوانین و سهمیه‌های درج آگهی (سقف ماهانه: ${toPersianDigits(this.adPolicy.maxAdsPerSolarMonth)}، سقف همزمان: ${toPersianDigits(this.adPolicy.maxActiveAdsPerUser)}، وضعیت: ${this.adPolicy.enabled ? 'فعال' : 'غیرفعال'})`,
+      status: 'SUCCESS',
+    });
+
+    return { ...this.adPolicy };
+  }
+
+  setUserCustomQuota(userId: string, quota: number | null): void {
+    const updatedCustom = { ...(this.adPolicy.userCustomQuotas || {}) };
+    if (quota === null || quota <= 0) {
+      delete updatedCustom[userId];
+    } else {
+      updatedCustom[userId] = quota;
+    }
+    this.adPolicy.userCustomQuotas = updatedCustom;
+    setToStorage(STORAGE_KEYS.AD_POLICY, this.adPolicy);
+
+    this.users = this.users.map(u => u.id === userId ? { ...u, customMonthlyQuota: quota && quota > 0 ? quota : undefined } : u);
+    setToStorage(STORAGE_KEYS.USERS, this.users);
+
+    const targetUser = this.users.find(u => u.id === userId);
+    this.addAuditLog({
+      action: 'UPDATE_POLICY',
+      details: quota && quota > 0
+        ? `تخصیص سهمیه ماهانه اختصاصی ${toPersianDigits(quota)} آگهی به کاربر "${targetUser?.displayName || userId}"`
+        : `حذف سهمیه اختصاصی و بازگشت به سقف عمومی برای کاربر "${targetUser?.displayName || userId}"`,
+      status: 'SUCCESS',
+    });
+  }
+
+  getUserQuotaStatus(userId?: string): UserQuotaStatus {
+    const user = userId ? this.users.find(u => u.id === userId) || this.currentUser : this.currentUser;
+    const now = new Date();
+    const currentMonth = getJalaliMonthYear(now);
+
+    const fallbackStatus: UserQuotaStatus = {
+      isBlocked: false,
+      solarMonthName: currentMonth.label,
+      solarMonthKey: currentMonth.key,
+      adsUsedThisMonth: 0,
+      maxAllowedThisMonth: this.adPolicy.maxAdsPerSolarMonth,
+      remainingThisMonth: this.adPolicy.maxAdsPerSolarMonth,
+      activeAdsCount: 0,
+      maxActiveAllowed: this.adPolicy.maxActiveAdsPerUser,
+      remainingActive: this.adPolicy.maxActiveAdsPerUser,
+      urgentUsedThisMonth: 0,
+      maxUrgentAllowed: this.adPolicy.maxUrgentBadgesPerMonth,
+      remainingUrgent: this.adPolicy.maxUrgentBadgesPerMonth,
+      canRequestUrgent: true,
+      isInCooldown: false,
+      isBypassed: false,
+      hasCustomQuota: false,
+    };
+
+    if (!user) {
+      return fallbackStatus;
+    }
+
+    const isExemptRole = user.role === 'SUPER_ADMIN' || user.role === 'CATEGORY_MANAGER';
+    const isBypassed = this.adPolicy.bypassForAdminsAndManagers && isExemptRole;
+
+    const customQuota = this.adPolicy.userCustomQuotas?.[user.id] ?? user.customMonthlyQuota;
+    const maxAllowedThisMonth = customQuota !== undefined ? customQuota : this.adPolicy.maxAdsPerSolarMonth;
+    const maxActiveAllowed = this.adPolicy.maxActiveAdsPerUser;
+    const maxUrgentAllowed = this.adPolicy.maxUrgentBadgesPerMonth;
+
+    const userAds = this.ads.filter(a => a.authorId === user.id || a.authorUsername === user.username);
+
+    // Ads posted in current Jalali month
+    const thisMonthAds = userAds.filter(a => {
+      const adMonth = getJalaliMonthYear(a.createdAt);
+      return adMonth.key === currentMonth.key;
+    });
+    const adsUsedThisMonth = thisMonthAds.length;
+
+    // Currently active or pending ads
+    const activeAds = userAds.filter(a => a.status === 'APPROVED' || a.status === 'PENDING');
+    const activeAdsCount = activeAds.length;
+
+    // Urgent badges used in current month
+    const urgentUsedThisMonth = thisMonthAds.filter(a => a.isUrgent || a.badgeRequested || a.badgeApproved).length;
+
+    // Cool-down check
+    let isInCooldown = false;
+    let cooldownRemainingMinutes = 0;
+    if (this.adPolicy.enabled && !isBypassed && this.adPolicy.coolDownHours > 0 && userAds.length > 0) {
+      const sortedAds = [...userAds].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const lastAd = sortedAds[0];
+      if (lastAd && lastAd.createdAt) {
+        const lastTime = new Date(lastAd.createdAt).getTime();
+        const diffMs = now.getTime() - lastTime;
+        const cooldownMs = this.adPolicy.coolDownHours * 3600 * 1000;
+        if (diffMs < cooldownMs) {
+          isInCooldown = true;
+          cooldownRemainingMinutes = Math.max(1, Math.ceil((cooldownMs - diffMs) / 60000));
+        }
+      }
+    }
+
+    const remainingThisMonth = Math.max(0, maxAllowedThisMonth - adsUsedThisMonth);
+    const remainingActive = Math.max(0, maxActiveAllowed - activeAdsCount);
+    const remainingUrgent = Math.max(0, maxUrgentAllowed - urgentUsedThisMonth);
+
+    let isBlocked = false;
+    let blockReason: string | undefined = undefined;
+
+    if (this.adPolicy.enabled && !isBypassed) {
+      if (adsUsedThisMonth >= maxAllowedThisMonth) {
+        isBlocked = true;
+        blockReason = `سهمیه درج آگهی شما برای ماه شمسی جاری (${currentMonth.label}) تکمیل شده است (${toPersianDigits(adsUsedThisMonth)} از ${toPersianDigits(maxAllowedThisMonth)} آگهی). این سهمیه در روز اول ماه شمسی بعد مجدداً فعال می‌شود.`;
+      } else if (activeAdsCount >= maxActiveAllowed) {
+        isBlocked = true;
+        blockReason = `شما در حال حاضر دارای ${toPersianDigits(activeAdsCount)} آگهی فعال در سامانه می‌باشید که معادل حداکثر سقف مجاز همزمان (${toPersianDigits(maxActiveAllowed)} عدد) است. برای درج آگهی جدید، لطفاً یکی از آگهی‌های پیشین خود را بایگانی یا حذف نمایید.`;
+      } else if (isInCooldown) {
+        isBlocked = true;
+        blockReason = `طبق سیاست سازمان، حداقل فاصله زمانی بین دو ثبت آگهی متوالی ${toPersianDigits(this.adPolicy.coolDownHours)} ساعت می‌باشد. لطفاً ${toPersianDigits(cooldownRemainingMinutes)} دقیقه دیگر مجدداً تلاش نمایید.`;
+      }
+    }
+
+    return {
+      isBlocked,
+      blockReason,
+      solarMonthName: currentMonth.label,
+      solarMonthKey: currentMonth.key,
+      adsUsedThisMonth,
+      maxAllowedThisMonth,
+      remainingThisMonth,
+      activeAdsCount,
+      maxActiveAllowed,
+      remainingActive,
+      urgentUsedThisMonth,
+      maxUrgentAllowed,
+      remainingUrgent,
+      canRequestUrgent: isBypassed || remainingUrgent > 0,
+      isInCooldown,
+      cooldownRemainingMinutes,
+      isBypassed,
+      hasCustomQuota: customQuota !== undefined,
+    };
+  }
+
   // Reports
   getUserPerformanceReport(): Array<{
     user: User;
@@ -962,6 +1417,7 @@ class StorageService {
     totalViews: number;
     totalContactViews: number;
     lastActivity: string;
+    quotaStatus: UserQuotaStatus;
   }> {
     return this.users.map(u => {
       const userAds = this.ads.filter(a => a.authorId === u.id);
@@ -980,6 +1436,7 @@ class StorageService {
         totalViews,
         totalContactViews,
         lastActivity: u.lastLoginShamsi || 'ثبت نشده',
+        quotaStatus: this.getUserQuotaStatus(u.id),
       };
     });
   }
@@ -994,6 +1451,7 @@ class StorageService {
     localStorage.removeItem(STORAGE_KEYS.AUDIT_LOGS);
     localStorage.removeItem(STORAGE_KEYS.BOOKMARKS);
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    localStorage.removeItem(STORAGE_KEYS.AD_POLICY);
     this.init();
   }
 }

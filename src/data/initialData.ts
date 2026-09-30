@@ -1,4 +1,4 @@
-import { User, Category, Ad, ActiveDirectoryConfig, MySQLConfig, AuditLog } from '../types';
+import { User, Category, Ad, ActiveDirectoryConfig, MySQLConfig, AuditLog, AdPostingPolicy } from '../types';
 import { MALE_FACELESS_AVATARS } from './defaultAvatars';
 import {
   OFFLINE_IMG_VEHICLE,
@@ -669,8 +669,8 @@ export const INITIAL_AD_CONFIG: ActiveDirectoryConfig = {
   groupManagerDn: 'CN=Category_Managers,OU=SecurityGroups,DC=company,DC=local',
   autoCreateUser: true,
   syncIntervalMinutes: 30,
-  isConnected: true,
-  lastSyncShamsi: '۱۴۰۳/۰۶/۳۰ ساعت ۱۲:۳۰',
+  isConnected: false,
+  lastSyncShamsi: 'تاکنون تست نشده',
 };
 
 export const INITIAL_MYSQL_CONFIG: MySQLConfig = {
@@ -733,3 +733,17 @@ export const INITIAL_AUDIT_LOGS: AuditLog[] = [
     status: 'SUCCESS',
   },
 ];
+
+export const INITIAL_AD_POSTING_POLICY: AdPostingPolicy = {
+  enabled: true,
+  maxAdsPerSolarMonth: 5,
+  maxActiveAdsPerUser: 3,
+  maxUrgentBadgesPerMonth: 2,
+  coolDownHours: 1,
+  bypassForAdminsAndManagers: true,
+  minTitleLength: 6,
+  maxTitleLength: 80,
+  userCustomQuotas: {
+    'usr-ali': 15,
+  },
+};

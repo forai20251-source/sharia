@@ -17,7 +17,7 @@ import {
   Calendar,
   Lock,
 } from 'lucide-react';
-import { Category, Ad, User } from '../types';
+import { Category, Ad, User, UserQuotaStatus, AdPostingPolicy } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
 import { getCurrentJalali, toPersianDigits, formatPersianNumber, getJalaliDateFromNow } from '../utils/jalali';
 import { OFFLINE_PRESET_IMAGES } from '../data/offlineImages';
@@ -25,6 +25,8 @@ import { OFFLINE_PRESET_IMAGES } from '../data/offlineImages';
 interface PostAdModalProps {
   categories: Category[];
   currentUser: User | null;
+  quotaStatus?: UserQuotaStatus;
+  policy?: AdPostingPolicy;
   onClose: () => void;
   onSubmitAd: (adData: Partial<Ad>) => void;
   onOpenLogin?: () => void;
@@ -42,6 +44,8 @@ const PRESET_IMAGE_OPTIONS = OFFLINE_PRESET_IMAGES;
 export const PostAdModal: React.FC<PostAdModalProps> = ({
   categories,
   currentUser,
+  quotaStatus,
+  policy,
   onClose,
   onSubmitAd,
   onOpenLogin,
@@ -316,6 +320,60 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* User Monthly Quota & Restriction Notice */}
+        {quotaStatus && (
+          <div className="px-6 pt-3 pb-1 shrink-0">
+            {quotaStatus.isBlocked ? (
+              <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-900 dark:text-rose-200 flex items-start gap-3 text-xs leading-relaxed animate-in fade-in">
+                <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-1 flex-1">
+                  <div className="flex items-center justify-between font-bold">
+                    <span>محدودیت سهمیه ثبت آگهی سازمانی</span>
+                    <span className="text-[11px] font-mono opacity-80">{quotaStatus.solarMonthName}</span>
+                  </div>
+                  <p className="text-slate-700 dark:text-slate-300 text-[11px]">
+                    {quotaStatus.blockReason}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <span className="text-slate-600 dark:text-slate-300 text-[11px]">
+                    سهمیه شما در <span className="font-bold text-slate-900 dark:text-white">{quotaStatus.solarMonthName}</span>:
+                  </span>
+                  <span className="font-bold text-rose-600 dark:text-rose-400 font-mono text-[11px] bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-lg border border-rose-200/60 dark:border-rose-900/60">
+                    {toPersianDigits(quotaStatus.adsUsedThisMonth)} از {toPersianDigits(quotaStatus.maxAllowedThisMonth)} آگهی
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    ({toPersianDigits(quotaStatus.remainingThisMonth)} باقیمانده)
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    آگهی‌های فعال:
+                  </span>
+                  <span className="font-bold text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">
+                    {toPersianDigits(quotaStatus.activeAdsCount)} از {toPersianDigits(quotaStatus.maxActiveAllowed)}
+                  </span>
+                  {quotaStatus.hasCustomQuota && (
+                    <span className="bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
+                      سهمیه اختصاصی
+                    </span>
+                  )}
+                  {quotaStatus.isBypassed && (
+                    <span className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                      معاف از سهمیه (مدیر)
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Step Wizard Indicator - Pinned */}
         <div className="shrink-0 px-6 py-3 bg-slate-50/70 dark:bg-slate-850/80 border-b border-slate-100 dark:border-slate-800 z-10">
@@ -880,20 +938,36 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
                 />
               </div>
 
-              {/* Urgent Flag */}
-              <label className="flex items-center justify-between p-3 rounded-2xl bg-amber-50/60 border border-amber-200 cursor-pointer">
+              {/* Urgent Flag with Quota check */}
+              <label
+                className={`flex items-center justify-between p-3 rounded-2xl border transition ${
+                  !quotaStatus?.canRequestUrgent && !quotaStatus?.isBypassed
+                    ? 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 opacity-60 cursor-not-allowed'
+                    : 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/60 cursor-pointer'
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  <Flame className="w-4 h-4 text-amber-600" />
+                  <Flame className="w-4 h-4 text-amber-600 shrink-0" />
                   <div>
-                    <span className="text-xs font-bold text-amber-900">نشان‌دار کردن به عنوان آگهی فوری</span>
-                    <span className="text-[11px] text-amber-700 block">
-                      آگهی شما با نشان متمایز قرمز در بالای فهرست نمایش داده می‌شود.
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-amber-900 dark:text-amber-200">نشان‌دار کردن به عنوان آگهی فوری</span>
+                      {quotaStatus && (
+                        <span className="text-[10px] text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 px-1.5 py-0.2 rounded font-mono">
+                          {toPersianDigits(quotaStatus.urgentUsedThisMonth)} از {toPersianDigits(quotaStatus.maxUrgentAllowed)} سهمیه ماه
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-amber-700 dark:text-amber-300 block">
+                      {!quotaStatus?.canRequestUrgent && !quotaStatus?.isBypassed
+                        ? 'سهمیه نشان فوری شما در ماه جاری تکمیل شده است.'
+                        : 'آگهی شما با نشان متمایز قرمز در بالای فهرست نمایش داده می‌شود.'}
                     </span>
                   </div>
                 </div>
                 <input
                   type="checkbox"
                   checked={isUrgent}
+                  disabled={!quotaStatus?.canRequestUrgent && !quotaStatus?.isBypassed}
                   onChange={e => setIsUrgent(e.target.checked)}
                   className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300"
                 />
@@ -948,8 +1022,13 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
           {step === 1 && (
             <button
               type="button"
+              disabled={quotaStatus?.isBlocked}
               onClick={handleProceedToStep2}
-              className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs active:scale-95"
+              className={`flex items-center gap-1.5 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs ${
+                quotaStatus?.isBlocked
+                  ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60'
+                  : 'bg-rose-600 hover:bg-rose-700 active:scale-95 cursor-pointer'
+              }`}
             >
               <span>مرحله بعد: ویژگی‌های دسته</span>
               <ArrowLeft className="w-4 h-4" />
@@ -959,8 +1038,13 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
           {step === 2 && (
             <button
               type="button"
+              disabled={quotaStatus?.isBlocked}
               onClick={handleProceedToStep3}
-              className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs active:scale-95"
+              className={`flex items-center gap-1.5 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-xs ${
+                quotaStatus?.isBlocked
+                  ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60'
+                  : 'bg-rose-600 hover:bg-rose-700 active:scale-95 cursor-pointer'
+              }`}
             >
               <span>مرحله بعد: تصاویر و قیمت</span>
               <ArrowLeft className="w-4 h-4" />
@@ -971,10 +1055,15 @@ export const PostAdModal: React.FC<PostAdModalProps> = ({
             <button
               type="submit"
               form="post-ad-form"
-              className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold px-6 py-2.5 rounded-xl shadow-md hover:shadow-lg transition active:scale-95"
+              disabled={quotaStatus?.isBlocked}
+              className={`flex items-center gap-2 text-white text-xs sm:text-sm font-bold px-6 py-2.5 rounded-xl shadow-md transition ${
+                quotaStatus?.isBlocked
+                  ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60'
+                  : 'bg-rose-600 hover:bg-rose-700 active:scale-95 hover:shadow-lg cursor-pointer'
+              }`}
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>ثبت نهایی آگهی</span>
+              <span>{quotaStatus?.isBlocked ? 'سهمیه ماهانه تکمیل است' : 'ثبت نهایی آگهی'}</span>
             </button>
           )}
         </div>

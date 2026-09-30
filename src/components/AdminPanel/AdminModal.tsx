@@ -54,6 +54,7 @@ import {
   LogOut,
   Flame,
   AlertTriangle,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   User,
@@ -64,6 +65,8 @@ import {
   MySQLConfig,
   AuditLog,
   FieldType,
+  AdPostingPolicy,
+  UserQuotaStatus,
 } from '../../types';
 import { EditAdModal } from '../EditAdModal';
 import { toPersianDigits, formatPersianNumber, formatJalaliDate } from '../../utils/jalali';
@@ -124,6 +127,7 @@ interface AdminModalProps {
     totalViews: number;
     totalContactViews: number;
     lastActivity: string;
+    quotaStatus?: UserQuotaStatus;
   }>;
   onClose: () => void;
   onApproveAd: (adId: string, keepBadge?: boolean) => void;
@@ -134,7 +138,7 @@ interface AdminModalProps {
   onAddFieldToCategory: (catId: string, field: Omit<CategoryField, 'id' | 'categoryId'>) => void;
   onDeleteCategoryField: (catId: string, fieldId: string) => void;
   onSaveADConfig: (cfg: Partial<ActiveDirectoryConfig>) => void;
-  onTestADConnection: () => { success: boolean; latencyMs: number; message: string; details: any };
+  onTestADConnection: (cfg?: Partial<ActiveDirectoryConfig>) => Promise<{ success: boolean; latencyMs: number; message: string; details: any }> | { success: boolean; latencyMs: number; message: string; details: any };
   onTestMySQLConnection: () => Promise<{
     success: boolean;
     connected?: boolean;
@@ -154,6 +158,9 @@ interface AdminModalProps {
   onGetMySQLStats?: () => Promise<{ success: boolean; adsCount: number; categoriesCount: number; usersCount: number; auditLogsCount: number }>;
   onUpdateAd?: (adId: string, updates: Partial<Ad>) => void;
   onEditUserProfile?: (user: User) => void;
+  adPolicy: AdPostingPolicy;
+  onSaveAdPolicy: (policy: Partial<AdPostingPolicy>) => void;
+  onSetUserCustomQuota: (userId: string, quota: number | null) => void;
 }
 
 type AdminTab =
@@ -161,6 +168,7 @@ type AdminTab =
   | 'USER_REPORT'
   | 'MODERATION'
   | 'CATEGORIES'
+  | 'AD_POLICIES'
   | 'ACTIVE_DIRECTORY'
   | 'MYSQL_LOCAL'
   | 'AUDIT_LOGS';
@@ -174,6 +182,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   mysqlConfig,
   auditLogs,
   userPerformanceReport,
+  adPolicy,
   onClose,
   onApproveAd,
   onRejectAd,
@@ -191,6 +200,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onGetMySQLStats,
   onUpdateAd,
   onEditUserProfile,
+  onSaveAdPolicy,
+  onSetUserCustomQuota,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('ANALYTICS');
 
@@ -288,24 +299,78 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [copiedSql, setCopiedSql] = useState(false);
   const [copiedNuxt, setCopiedNuxt] = useState(false);
 
+  // Ad Posting Policy & Restrictions State
+  const [policyEnabled, setPolicyEnabled] = useState(adPolicy.enabled);
+  const [maxMonthlyAds, setMaxMonthlyAds] = useState(adPolicy.maxAdsPerSolarMonth);
+  const [maxActiveAds, setMaxActiveAds] = useState(adPolicy.maxActiveAdsPerUser);
+  const [maxUrgentBadges, setMaxUrgentBadges] = useState(adPolicy.maxUrgentBadgesPerMonth);
+  const [coolDownHours, setCoolDownHours] = useState(adPolicy.coolDownHours);
+  const [bypassAdmins, setBypassAdmins] = useState(adPolicy.bypassForAdminsAndManagers);
+  const [minTitleLen, setMinTitleLen] = useState(adPolicy.minTitleLength);
+  const [maxTitleLen, setMaxTitleLen] = useState(adPolicy.maxTitleLength);
+  const [policySavedNotice, setPolicySavedNotice] = useState(false);
+
+  // User Custom Quota assignment state
+  const [quotaTargetUserId, setQuotaTargetUserId] = useState<string>('');
+  const [customQuotaInputVal, setCustomQuotaInputVal] = useState<number>(10);
+
   // In-app deletion confirmation states (avoid window.confirm in iframe)
   const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
   const [adToDeleteId, setAdToDeleteId] = useState<string | null>(null);
   const [adConfigSaved, setAdConfigSaved] = useState(false);
 
+  // AD Form Inputs
+  const [adHost, setAdHost] = useState(adConfig.serverHost);
+  const [adPort, setAdPort] = useState(adConfig.port);
+  const [adDomain, setAdDomain] = useState(adConfig.domainName);
+  const [adBaseDn, setAdBaseDn] = useState(adConfig.baseDn);
+  const [adBindUser, setAdBindUser] = useState(adConfig.bindUserDn);
+  const [adBindPassword, setAdBindPassword] = useState(adConfig.bindPasswordMasked || '');
+  const [adGroupAdmin, setAdGroupAdmin] = useState(adConfig.groupAdminDn);
+  const [adGroupManager, setAdGroupManager] = useState(adConfig.groupManagerDn);
+  const [adUseSsl, setAdUseSsl] = useState(adConfig.useSsl);
+  const [adAutoCreate, setAdAutoCreate] = useState(adConfig.autoCreateUser);
+
+  useEffect(() => {
+    setAdHost(adConfig.serverHost);
+    setAdPort(adConfig.port);
+    setAdDomain(adConfig.domainName);
+    setAdBaseDn(adConfig.baseDn);
+    setAdBindUser(adConfig.bindUserDn);
+    setAdGroupAdmin(adConfig.groupAdminDn);
+    setAdGroupManager(adConfig.groupManagerDn);
+    setAdUseSsl(adConfig.useSsl);
+    setAdAutoCreate(adConfig.autoCreateUser);
+  }, [adConfig]);
+
   // Export User Performance Report to CSV
   const handleExportCSV = () => {
-    const headers = ['نام کاربر', 'نام کاربری ویندوز (AD)', 'واحد سازمانی', 'نقش', 'تعداد کل آگهی', 'تایید شده', 'در انتظار', 'رد شده', 'کل بازدیدها', 'آخرین فعالیت'];
+    const headers = [
+      'نام کاربر',
+      'نام کاربری ویندوز (AD)',
+      'واحد سازمانی',
+      'نقش',
+      'تعداد کل آگهی',
+      'تایید شده',
+      'در انتظار',
+      'رد شده',
+      'کل بازدیدها',
+      'سهمیه مصرفی ماه جاری',
+      'سقف مجاز ماه',
+      'آخرین فعالیت',
+    ];
     const rows = userPerformanceReport.map(r => [
       r.user.displayName,
       r.user.username,
-      r.user.department,
+      r.user.department || '',
       r.user.role,
       r.totalAds,
       r.approvedAds,
       r.pendingAds,
       r.rejectedAds,
       r.totalViews,
+      r.quotaStatus?.adsUsedThisMonth ?? 0,
+      r.quotaStatus?.isBypassed ? 'معاف (مدیر)' : (r.quotaStatus?.maxAllowedThisMonth ?? adPolicy.maxAdsPerSolarMonth),
       r.lastActivity,
     ]);
 
@@ -333,12 +398,33 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     document.body.removeChild(link);
   };
 
-  const handleTestAD = () => {
+  const handleTestAD = async () => {
     setIsTestingAD(true);
-    setTimeout(() => {
-      setAdTestResult(onTestADConnection());
+    setAdTestResult(null);
+    try {
+      const res = await onTestADConnection({
+        serverHost: adHost,
+        port: Number(adPort) || 389,
+        useSsl: adUseSsl,
+        domainName: adDomain,
+        baseDn: adBaseDn,
+        bindUserDn: adBindUser,
+        bindPasswordMasked: adBindPassword,
+        groupAdminDn: adGroupAdmin,
+        groupManagerDn: adGroupManager,
+        autoCreateUser: adAutoCreate,
+      });
+      setAdTestResult(res);
+    } catch (e: any) {
+      setAdTestResult({
+        success: false,
+        latencyMs: 0,
+        message: `خطای تست ارتباط: ${e.message}`,
+        details: {},
+      });
+    } finally {
       setIsTestingAD(false);
-    }, 600);
+    }
   };
 
   const handleTestMySQL = async () => {
@@ -442,6 +528,26 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setNewFieldUnit('');
     setNewFieldOptionsStr('');
     setShowAddFieldModal(false);
+  };
+
+  const handleAssignUserCustomQuota = (userId: string, quota: number | null) => {
+    onSetUserCustomQuota(userId, quota);
+  };
+
+  const handleSavePolicySubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    onSaveAdPolicy({
+      enabled: policyEnabled,
+      maxAdsPerSolarMonth: Number(maxMonthlyAds) || 1,
+      maxActiveAdsPerUser: Number(maxActiveAds) || 1,
+      maxUrgentBadgesPerMonth: Number(maxUrgentBadges) || 0,
+      coolDownHours: Number(coolDownHours) || 0,
+      bypassForAdminsAndManagers: bypassAdmins,
+      minTitleLength: Number(minTitleLen) || 3,
+      maxTitleLength: Number(maxTitleLen) || 120,
+    });
+    setPolicySavedNotice(true);
+    setTimeout(() => setPolicySavedNotice(false), 3500);
   };
 
   // Category Add / Edit Handlers
@@ -699,6 +805,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
           <button
             type="button"
+            onClick={() => setActiveTab('AD_POLICIES')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'AD_POLICIES'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            <span>قوانین و سهمیه درج آگهی</span>
+            {policyEnabled ? (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="سهمیه‌بندی فعال است" />
+            ) : (
+              <span className="w-2 h-2 rounded-full bg-slate-300" title="سهمیه‌بندی غیرفعال است" />
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('ACTIVE_DIRECTORY')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               activeTab === 'ACTIVE_DIRECTORY'
@@ -900,6 +1024,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         <th className="py-3 px-3 text-center">در انتظار</th>
                         <th className="py-3 px-3 text-center">رد شده</th>
                         <th className="py-3 px-3 text-center">کل بازدید</th>
+                        <th className="py-3 px-3 text-center">سهمیه ماه جاری</th>
                         <th className="py-3 px-4">آخرین فعالیت (شمسی)</th>
                         <th className="py-3 px-3 text-center">عملیات مدیریت</th>
                       </tr>
@@ -964,6 +1089,25 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             </td>
                             <td className="py-3 px-3 text-center font-mono font-bold text-slate-700">
                               {toPersianDigits(item.totalViews)}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              {item.quotaStatus?.isBypassed ? (
+                                <span className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                  معاف (مدیر)
+                                </span>
+                              ) : item.quotaStatus?.isBlocked ? (
+                                <span
+                                  className="bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 text-[10px] px-2 py-0.5 rounded-full font-bold inline-block"
+                                  title={item.quotaStatus.blockReason}
+                                >
+                                  سقف تکمیل ({toPersianDigits(item.quotaStatus.adsUsedThisMonth)}/{toPersianDigits(item.quotaStatus.maxAllowedThisMonth)})
+                                </span>
+                              ) : (
+                                <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                                  {toPersianDigits(item.quotaStatus?.adsUsedThisMonth ?? 0)} از {toPersianDigits(item.quotaStatus?.maxAllowedThisMonth ?? adPolicy.maxAdsPerSolarMonth)}
+                                  {item.quotaStatus?.hasCustomQuota ? ' ★' : ''}
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
                               {item.lastActivity}
@@ -1979,14 +2123,414 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             </div>
           )}
 
+          {/* TAB: AD POSTING POLICIES & QUOTAS MANAGEMENT */}
+          {activeTab === 'AD_POLICIES' && (
+            <div className="space-y-6 animate-in fade-in duration-150">
+              {/* Header Box */}
+              <div className="p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-indigo-900/40 shadow-sm">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal className="w-5 h-5 text-indigo-400" />
+                    <span className="font-extrabold text-sm sm:text-base">مدیریت قوانین و سهمیه‌بندی ثبت آگهی پرسنل</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                    جهت حفظ انضباط سازمانی، جلوگیری از ثبت انبوه یا هرزنامه و ایجاد فرصت برابر برای تمامی همکاران، می‌توانید سقف تعداد آگهی در هر ماه شمسی، تعداد آگهی‌های همزمان فعال، سهمیه نشان فوری و استثنائات را پیکربندی نمایید.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {policySavedNotice && (
+                    <span className="text-xs text-emerald-400 font-bold flex items-center gap-1.5 animate-in fade-in bg-emerald-950/80 px-3 py-1.5 rounded-xl border border-emerald-800">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>قوانین با موفقیت ذخیره شد</span>
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleSavePolicySubmit()}
+                    className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-sm cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>ذخیره تغییرات سهمیه‌ها</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Master Activation Toggle Switch */}
+              <div className={`p-4 rounded-2xl border transition-all ${
+                policyEnabled
+                  ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/80'
+                  : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                      policyEnabled ? 'bg-emerald-600 text-white' : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}>
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                          فعال‌سازی سراسری سامانه سهمیه‌بندی و محدودیت‌ها
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          policyEnabled
+                            ? 'bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                        }`}>
+                          {policyEnabled ? 'فعال و جاری' : 'غیرفعال (ثبت نامحدود)'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                        در صورت غیرفعال بودن، محدودیت‌های ماهانه و سقف همزمان برای کاربران بررسی نخواهد شد.
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={policyEnabled}
+                      onChange={e => setPolicyEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-12 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Core Limits Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* 1. Monthly Solar Quota */}
+                <div className="p-4 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">سقف در هر ماه شمسی</span>
+                    <Clock className="w-4 h-4 text-indigo-500" />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setMaxMonthlyAds(prev => Math.max(1, prev - 1))}
+                      className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={maxMonthlyAds}
+                      onChange={e => setMaxMonthlyAds(Math.max(1, Number(e.target.value)))}
+                      className="w-20 text-center font-bold font-mono text-base bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-1 text-slate-900 dark:text-white outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMaxMonthlyAds(prev => Math.min(100, prev + 1))}
+                      className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    هر کارمند در طول یک ماه تقویم شمسی (مثلاً مهر ماه) حداکثر این تعداد آگهی می‌تواند ثبت کند. سهمیه در اول ماه بعد تمدید می‌گردد.
+                  </p>
+                </div>
+
+                {/* 2. Concurrent Active Ads */}
+                <div className="p-4 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">سقف آگهی همزمان فعال</span>
+                    <Layers className="w-4 h-4 text-blue-500" />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setMaxActiveAds(prev => Math.max(1, prev - 1))}
+                      className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={maxActiveAds}
+                      onChange={e => setMaxActiveAds(Math.max(1, Number(e.target.value)))}
+                      className="w-20 text-center font-bold font-mono text-base bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-1 text-slate-900 dark:text-white outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMaxActiveAds(prev => Math.min(50, prev + 1))}
+                      className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    حداکثر تعداد آگهی‌های همزمان کاربر که در وضعیت «تایید شده» یا «در انتظار» قرار دارند. مانع از انباشت آگهی‌های بیهوده می‌شود.
+                  </p>
+                </div>
+
+                {/* 3. Urgent Badges per Month */}
+                <div className="p-4 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">سقف نشان فوری در ماه</span>
+                    <Flame className="w-4 h-4 text-amber-500" />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setMaxUrgentBadges(prev => Math.max(0, prev - 1))}
+                      className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={maxUrgentBadges}
+                      onChange={e => setMaxUrgentBadges(Math.max(0, Number(e.target.value)))}
+                      className="w-20 text-center font-bold font-mono text-base bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-1 text-slate-900 dark:text-white outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMaxUrgentBadges(prev => Math.min(20, prev + 1))}
+                      className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold hover:bg-slate-200 dark:hover:bg-slate-600 transition"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    حداکثر دفعاتی که کاربر می‌تواند در یک ماه شمسی تقاضای نشان متمایز و قرارگیری آگهی به عنوان فوری در صدر تابلوی اعلانات را ثبت کند.
+                  </p>
+                </div>
+
+                {/* 4. Cool-down Period */}
+                <div className="p-4 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">فاصله بین دو ثبت متوالی</span>
+                    <Clock className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div className="pt-1">
+                    <select
+                      value={coolDownHours}
+                      onChange={e => setCoolDownHours(Number(e.target.value))}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white outline-none"
+                    >
+                      <option value={0}>بدون وقفه (بلافاصله مجاز)</option>
+                      <option value={1}>حداقل ۱ ساعت فاصله</option>
+                      <option value={2}>حداقل ۲ ساعت فاصله</option>
+                      <option value={6}>حداقل ۶ ساعت فاصله</option>
+                      <option value={12}>حداقل ۱۲ ساعت فاصله</option>
+                      <option value={24}>حداقل ۲۴ ساعت (۱ روز)</option>
+                    </select>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    فاصله زمانی اجباری بین ارسال دو آگهی توسط یک کاربر، جهت جلوگیری از رفتارهای ربات‌گونه یا ارسال رگباری آگهی‌ها در سازمان.
+                  </p>
+                </div>
+              </div>
+
+              {/* Exceptions & Role Overrides */}
+              <div className="p-5 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-rose-600" />
+                  <span>معافیت‌های دسترسی سازمانی و حدود متن</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={bypassAdmins}
+                      onChange={e => setBypassAdmins(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 mt-0.5"
+                    />
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        معافیت مدیران سیستم و مدیران دسته‌ها از سهمیه‌ها
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                        کاربران با نقش مدیر ارشد یا مدیر دسته‌بندی می‌توانند جهت امور سازمانی، بدون سقف ماهانه آگهی ثبت کنند.
+                      </span>
+                    </div>
+                  </label>
+
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                      محدودیت کاراکتر عنوان آگهی
+                    </span>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-500">حداقل:</span>
+                      <input
+                        type="number"
+                        min={3}
+                        max={20}
+                        value={minTitleLen}
+                        onChange={e => setMinTitleLen(Number(e.target.value))}
+                        className="w-16 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-center font-mono font-bold"
+                      />
+                      <span className="text-slate-500 mr-2">حداکثر:</span>
+                      <input
+                        type="number"
+                        min={30}
+                        max={200}
+                        value={maxTitleLen}
+                        onChange={e => setMaxTitleLen(Number(e.target.value))}
+                        className="w-16 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-center font-mono font-bold"
+                      />
+                      <span className="text-[11px] text-slate-400">کاراکتر</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Quotas per User (Special Employee Exemptions) */}
+              <div className="p-5 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Users className="w-4 h-4 text-indigo-600" />
+                      <span>سهمیه‌های اختصاصی برای پرسنل یا واحدهای خاص (Custom User Quotas)</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      در صورتی که برخی از همکاران (مانند واحد املاک، پشتیبانی ناوگان، رفاهی یا تدارکات) نیاز به ثبت آگهی بیش از سقف عمومی دارند، می‌توانید سهمیه ماهانه مجزایی به آن‌ها اختصاص دهید.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Assignment Form */}
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 flex flex-wrap items-center gap-3">
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                      انتخاب همکار:
+                    </label>
+                    <select
+                      value={quotaTargetUserId}
+                      onChange={e => setQuotaTargetUserId(e.target.value)}
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white outline-none"
+                    >
+                      <option value="">انتخاب از فهرست کاربران...</option>
+                      {users.map(u => (
+                        <option key={u.id} value={u.id}>
+                          {u.displayName} ({u.username}) - {u.department || 'عمومی'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="w-36">
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                      سهمیه در ماه شمسی:
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={customQuotaInputVal}
+                      onChange={e => setCustomQuotaInputVal(Math.max(1, Number(e.target.value)))}
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white outline-none font-mono text-center"
+                    />
+                  </div>
+
+                  <div className="self-end">
+                    <button
+                      type="button"
+                      disabled={!quotaTargetUserId}
+                      onClick={() => {
+                        if (quotaTargetUserId) {
+                          handleAssignUserCustomQuota(quotaTargetUserId, customQuotaInputVal);
+                          setQuotaTargetUserId('');
+                        }
+                      }}
+                      className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition cursor-pointer"
+                    >
+                      ثبت سهمیه اختصاصی
+                    </button>
+                  </div>
+                </div>
+
+                {/* Table of Custom Quotas */}
+                <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-100/80 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="py-2.5 px-3">نام و مشخصات همکار</th>
+                        <th className="py-2.5 px-3">واحد سازمانی</th>
+                        <th className="py-2.5 px-3">نقش</th>
+                        <th className="py-2.5 px-3 text-center">سهمیه ماهانه اختصاصی</th>
+                        <th className="py-2.5 px-3 text-center">عملیات</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
+                      {Object.keys(adPolicy.userCustomQuotas || {}).length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-4 text-center text-xs text-slate-400">
+                            در حال حاضر هیچ کاربر دارای سهمیه اختصاصی نیست و تمام پرسنل از سقف عمومی ({toPersianDigits(adPolicy.maxAdsPerSolarMonth)} آگهی در ماه) استفاده می‌کنند.
+                          </td>
+                        </tr>
+                      ) : (
+                        Object.entries(adPolicy.userCustomQuotas || {}).map(([uId, quotaNum]) => {
+                          const target = users.find(u => u.id === uId);
+                          return (
+                            <tr key={uId} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                              <td className="py-2.5 px-3 font-bold">
+                                {target ? `${target.displayName} (${target.username})` : uId}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-500 dark:text-slate-400">
+                                {target?.department || 'نامشخص'}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] px-2 py-0.5 rounded font-mono">
+                                  {target?.role || 'USER'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span className="font-bold font-mono text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-1 rounded-lg border border-indigo-200/60 dark:border-indigo-900/60">
+                                  {toPersianDigits(quotaNum)} آگهی در ماه
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAssignUserCustomQuota(uId, null)}
+                                  className="text-rose-600 hover:text-rose-700 text-[11px] font-bold hover:underline"
+                                  title="حذف سهمیه اختصاصی و بازگشت به سهمیه عمومی"
+                                >
+                                  بازگشت به سقف عمومی
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB 5: ACTIVE DIRECTORY & LDAP CONFIG (Key prompt requirement) */}
           {activeTab === 'ACTIVE_DIRECTORY' && (
             <div className="space-y-6 animate-in fade-in duration-150">
-              <div className="p-4 bg-slate-900 text-white rounded-2xl flex items-start justify-between gap-4">
+              <div className="p-4 bg-slate-900 text-white rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <Server className="w-5 h-5 text-rose-400" />
-                    <span className="font-extrabold text-sm">پیکربندی کنترلر دامنه اکتیو دایرکتوری ویندوز</span>
+                    <span className="font-extrabold text-sm sm:text-base">پیکربندی کنترلر دامنه اکتیو دایرکتوری ویندوز (Active Directory)</span>
+                    <span
+                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                        adConfig.isConnected
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${adConfig.isConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                      <span>{adConfig.isConnected ? 'متصل و تایید شده' : 'قطع ارتباط / تست نشده'}</span>
+                    </span>
                   </div>
                   <p className="text-xs text-slate-300 leading-relaxed">
                     کاربران با ورود نام کاربری ویندوز (sAMAccountName) و کلمه عبور شبکه، مستقیماً از طریق سرویس دایرکتوری احراز هویت شده و اطلاعات واحد سازمانی و تلفن آن‌ها همگام می‌گردد.
@@ -1997,10 +2541,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   type="button"
                   onClick={handleTestAD}
                   disabled={isTestingAD}
-                  className="shrink-0 flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-xs"
+                  className="shrink-0 flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-xs cursor-pointer"
                 >
                   <RefreshCw className={`w-4 h-4 ${isTestingAD ? 'animate-spin' : ''}`} />
-                  <span>تست اتصال زنده به Active Directory</span>
+                  <span>{isTestingAD ? 'در حال برقراری ارتباط با دامین...' : 'تست اتصال زنده به Active Directory'}</span>
                 </button>
               </div>
 
@@ -2008,103 +2552,156 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 <div
                   className={`p-4 rounded-2xl border text-xs leading-relaxed animate-in fade-in ${
                     adTestResult.success
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                      : 'bg-rose-50 border-rose-200 text-rose-900'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                      : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200'
                   }`}
                 >
                   <div className="flex items-center gap-2 font-bold mb-1">
-                    <CheckCircle className="w-4 h-4 text-emerald-600" />
-                    <span>نتیجه تست برقراری ارتباط (زمان پاسخ: {toPersianDigits(adTestResult.latencyMs)} میلی‌ثانیه):</span>
+                    {adTestResult.success ? (
+                      <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                    )}
+                    <span>
+                      نتیجه تست برقراری ارتباط{' '}
+                      {adTestResult.latencyMs > 0 && `(زمان پاسخ: ${toPersianDigits(adTestResult.latencyMs)} میلی‌ثانیه)`}:
+                    </span>
                   </div>
                   <p>{adTestResult.message}</p>
                 </div>
               )}
 
               {/* Form Settings */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-4">
-                <h4 className="text-xs font-bold text-slate-800 border-b border-slate-100 pb-2">
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-4">
+                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-700 pb-2">
                   تنظیمات سرور LDAP / Domain Controller
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       آدرس سرور اکتیو دایرکتوری (Host / IP)
                     </label>
                     <input
                       type="text"
-                      defaultValue={adConfig.serverHost}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 outline-none"
+                      value={adHost}
+                      onChange={e => setAdHost(e.target.value)}
+                      placeholder="192.168.1.10 یا dc.company.local"
+                      dir="ltr"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      پورت اتصال LDAP (389 یا 636 LDAPS)
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      پورت اتصال LDAP (389 عادی / 636 LDAPS)
                     </label>
                     <input
                       type="number"
-                      defaultValue={adConfig.port}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 outline-none"
+                      value={adPort}
+                      onChange={e => setAdPort(Number(e.target.value))}
+                      dir="ltr"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       نام دامنه ویندوز (NetBIOS Domain)
                     </label>
                     <input
                       type="text"
-                      defaultValue={adConfig.domainName}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 outline-none"
+                      value={adDomain}
+                      onChange={e => setAdDomain(e.target.value.toUpperCase())}
+                      placeholder="CORP"
+                      dir="ltr"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       مسیر پایه دایرکتوری (Base DN)
                     </label>
                     <input
                       type="text"
-                      defaultValue={adConfig.baseDn}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 outline-none"
+                      value={adBaseDn}
+                      onChange={e => setAdBaseDn(e.target.value)}
+                      placeholder="DC=company,DC=local"
+                      dir="ltr"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      حساب کاربری سرویس اتصال (Bind DN)
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      حساب سرویس اتصال (Bind DN یا sAMAccountName)
                     </label>
                     <input
                       type="text"
-                      defaultValue={adConfig.bindUserDn}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 outline-none"
+                      value={adBindUser}
+                      onChange={e => setAdBindUser(e.target.value)}
+                      placeholder="CN=svc-ldap,OU=Services,DC=company,DC=local یا svc-ldap"
+                      dir="ltr"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      رمز عبور حساب سرویس (Bind Password)
+                    </label>
+                    <input
+                      type="password"
+                      value={adBindPassword}
+                      onChange={e => setAdBindPassword(e.target.value)}
+                      placeholder="کلمه عبور حساب سرویس برای جستجو در دایرکتوری"
+                      dir="ltr"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-4 pt-5">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={adUseSsl}
+                        onChange={e => setAdUseSsl(e.target.checked)}
+                        className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300"
+                      />
+                      <span className="text-xs text-slate-700 dark:text-slate-300">استفاده از پروتکل امن LDAPS (SSL/TLS)</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       گروه امنیتی مدیران ارشد (Admin Group DN)
                     </label>
                     <input
                       type="text"
-                      defaultValue={adConfig.groupAdminDn}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 outline-none"
+                      value={adGroupAdmin}
+                      onChange={e => setAdGroupAdmin(e.target.value)}
+                      dir="ltr"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       گروه امنیتی مدیران دسته‌ها (Managers Group DN)
                     </label>
                     <input
                       type="text"
-                      defaultValue={adConfig.groupManagerDn}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 outline-none"
+                      value={adGroupManager}
+                      onChange={e => setAdGroupManager(e.target.value)}
+                      dir="ltr"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none"
                     />
                   </div>
                 </div>
@@ -2119,7 +2716,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      onSaveADConfig({});
+                      onSaveADConfig({
+                        serverHost: adHost.trim(),
+                        port: Number(adPort) || 389,
+                        useSsl: adUseSsl,
+                        domainName: adDomain.trim(),
+                        baseDn: adBaseDn.trim(),
+                        bindUserDn: adBindUser.trim(),
+                        bindPasswordMasked: adBindPassword.trim(),
+                        groupAdminDn: adGroupAdmin.trim(),
+                        groupManagerDn: adGroupManager.trim(),
+                        autoCreateUser: adAutoCreate,
+                      });
                       setAdConfigSaved(true);
                       setTimeout(() => setAdConfigSaved(false), 3000);
                     }}

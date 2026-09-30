@@ -17,11 +17,13 @@ import {
   Sun,
   Moon,
 } from 'lucide-react';
-import { User } from '../types';
+import { User, UserQuotaStatus } from '../types';
 import { useTheme } from '../context/ThemeContext';
+import { toPersianDigits } from '../utils/jalali';
 
 interface NavbarProps {
   currentUser: User | null;
+  quotaStatus?: UserQuotaStatus;
   onOpenLogin: () => void;
   onOpenPostAd: () => void;
   onOpenAdmin: () => void;
@@ -38,6 +40,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
+  quotaStatus,
   onOpenLogin,
   onOpenPostAd,
   onOpenAdmin,
@@ -219,6 +222,58 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                           <span>احراز هویت شده از طریق Active Directory (ویندوز)</span>
                         </div>
+
+                        {/* Solar Month Quota & Restrictions Badge */}
+                        {quotaStatus && (
+                          <div className="mt-2.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-slate-500 dark:text-slate-400">
+                                سهمیه ماه جاری ({quotaStatus.solarMonthName}):
+                              </span>
+                              <span className="font-bold font-mono text-rose-600 dark:text-rose-400">
+                                {toPersianDigits(quotaStatus.adsUsedThisMonth)} از {toPersianDigits(quotaStatus.maxAllowedThisMonth)}
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full transition-all ${
+                                  quotaStatus.remainingThisMonth === 0 ? 'bg-rose-500' : 'bg-emerald-500'
+                                }`}
+                                style={{
+                                  width: `${Math.min(
+                                    100,
+                                    Math.round(
+                                      (quotaStatus.adsUsedThisMonth /
+                                        (quotaStatus.maxAllowedThisMonth || 1)) *
+                                        100
+                                    )
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                              <span>{toPersianDigits(quotaStatus.remainingThisMonth)} عدد باقیمانده</span>
+                              <span>
+                                فعال: {toPersianDigits(quotaStatus.activeAdsCount)}/{toPersianDigits(quotaStatus.maxActiveAllowed)}
+                              </span>
+                            </div>
+                            {quotaStatus.isBlocked && (
+                              <div className="text-[10px] text-rose-600 dark:text-rose-400 font-bold bg-rose-50 dark:bg-rose-950/60 p-1 rounded-lg border border-rose-200 dark:border-rose-900/60 text-center">
+                                {quotaStatus.blockReason}
+                              </div>
+                            )}
+                            {quotaStatus.hasCustomQuota && (
+                              <div className="text-[10px] text-amber-700 dark:text-amber-400 font-bold text-center">
+                                ★ دارای سهمیه اختصاصی سازمانی
+                              </div>
+                            )}
+                            {quotaStatus.isBypassed && (
+                              <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold text-center">
+                                ✓ معاف از سهمیه‌بندی (دسترسی مدیر)
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="py-1">

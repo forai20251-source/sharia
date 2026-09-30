@@ -22,6 +22,8 @@ import {
   ActiveDirectoryConfig,
   MySQLConfig,
   AuditLog,
+  AdPostingPolicy,
+  UserQuotaStatus,
 } from './types';
 import { storageService } from './services/storageService';
 import { Navbar } from './components/Navbar';
@@ -56,6 +58,7 @@ export default function App() {
   const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [adConfig, setAdConfig] = useState<ActiveDirectoryConfig>(storageService.getActiveDirectoryConfig());
   const [mysqlConfig, setMysqlConfig] = useState<MySQLConfig>(storageService.getMySQLConfig());
+  const [adPolicy, setAdPolicy] = useState<AdPostingPolicy>(storageService.getAdPostingPolicy());
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   // UI Control States
@@ -90,7 +93,20 @@ export default function App() {
     setBookmarks(storageService.getBookmarks());
     setAdConfig(storageService.getActiveDirectoryConfig());
     setMysqlConfig(storageService.getMySQLConfig());
+    setAdPolicy(storageService.getAdPostingPolicy());
     setAuditLogs(storageService.getAuditLogs());
+  };
+
+  const handleSaveAdPolicy = (policy: Partial<AdPostingPolicy>) => {
+    const updated = storageService.saveAdPostingPolicy(policy);
+    setAdPolicy(updated);
+    refreshData();
+  };
+
+  const handleSetUserCustomQuota = (userId: string, quota: number | null) => {
+    storageService.setUserCustomQuota(userId, quota);
+    setAdPolicy(storageService.getAdPostingPolicy());
+    refreshData();
   };
 
   const handleSyncWithMySQL = async () => {
@@ -230,6 +246,9 @@ export default function App() {
   };
 
   const handleSaveUserProfile = (userId: string, updates: Partial<User>) => {
+    if (updates.customMonthlyQuota !== undefined) {
+      storageService.setUserCustomQuota(userId, updates.customMonthlyQuota || null);
+    }
     const updated = storageService.updateUser(userId, updates, currentUser || undefined);
     refreshData();
     if (updated && currentUser && currentUser.id === userId) {
@@ -357,6 +376,7 @@ export default function App() {
       {/* Main Navbar */}
       <Navbar
         currentUser={currentUser}
+        quotaStatus={currentUser ? storageService.getUserQuotaStatus(currentUser.id) : undefined}
         onOpenLogin={() => {
           setLoginNotice('');
           setIsLoginOpen(true);
@@ -569,6 +589,8 @@ export default function App() {
         <PostAdModal
           categories={categories}
           currentUser={currentUser}
+          quotaStatus={currentUser ? storageService.getUserQuotaStatus(currentUser.id) : undefined}
+          policy={adPolicy}
           onClose={() => setIsPostAdOpen(false)}
           onSubmitAd={handleCreateAd}
           onOpenLogin={() => {
@@ -623,7 +645,7 @@ export default function App() {
           onAddFieldToCategory={handleAddFieldToCategory}
           onDeleteCategoryField={handleDeleteCategoryField}
           onSaveADConfig={handleSaveADConfig}
-          onTestADConnection={() => storageService.testActiveDirectoryConnection()}
+          onTestADConnection={(cfg) => storageService.testActiveDirectoryConnection(cfg)}
           onTestMySQLConnection={() => storageService.testMySQLConnection()}
           onInitMySQLSchema={() => storageService.initMySQLSchema()}
           onSyncWithMySQL={handleSyncWithMySQL}
@@ -631,6 +653,9 @@ export default function App() {
           onGetMySQLStats={() => storageService.getMySQLStats()}
           onUpdateAd={handleUpdateAd}
           onEditUserProfile={handleAdminEditUserProfile}
+          adPolicy={adPolicy}
+          onSaveAdPolicy={handleSaveAdPolicy}
+          onSetUserCustomQuota={handleSetUserCustomQuota}
         />
       )}
 

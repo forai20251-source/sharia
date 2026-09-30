@@ -160,6 +160,38 @@ export function formatPersianRelativeTime(dateInput: Date | string | number): st
   return formatJalaliDate(d, 'long');
 }
 
+// Get Jalali month and year descriptor for any date or timestamp
+export function getJalaliMonthYear(dateInput: Date | string | number): {
+  year: number;
+  month: number;
+  monthName: string;
+  key: string; // e.g. "1403/07"
+  label: string; // e.g. "مهر ۱۴۰۳"
+} {
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) {
+    const cur = getCurrentJalali();
+    const sm = padPersianDigits(cur.month, 2);
+    return {
+      year: cur.year,
+      month: cur.month,
+      monthName: cur.monthName,
+      key: `${cur.year}/${sm}`,
+      label: `${cur.monthName} ${toPersianDigits(cur.year)}`,
+    };
+  }
+  const [jy, jm] = gregorianToJalali(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  const sm = padPersianDigits(jm, 2);
+  const monthName = PERSIAN_MONTH_NAMES[jm - 1] || 'نامشخص';
+  return {
+    year: jy,
+    month: jm,
+    monthName,
+    key: `${jy}/${sm}`,
+    label: `${monthName} ${toPersianDigits(jy)}`,
+  };
+}
+
 // Get current Jalali year, month, day
 export function getCurrentJalali(): { year: number; month: number; day: number; monthName: string } {
   const now = new Date();
