@@ -13,24 +13,24 @@ const __dirname = path.dirname(__filename);
 
 // Sanitize host string to remove annotations like (localhost) or brackets
 function cleanHost(rawHost: any): string {
-  if (!rawHost || typeof rawHost !== 'string') return '127.0.0.1';
+  if (!rawHost || typeof rawHost !== 'string') return '';
   let cleaned = rawHost.replace(/\s*\(.*?\)/g, '').trim();
   if (cleaned.toLowerCase() === 'localhost') return '127.0.0.1';
-  return cleaned || '127.0.0.1';
+  return cleaned;
 }
 
 // Global server-side Active Directory configuration
 let serverAdConfig: any = {
-  serverHost: cleanHost(process.env.AD_HOST || '192.168.1.10'),
+  serverHost: cleanHost(process.env.AD_HOST || ''),
   port: Number(process.env.AD_PORT) || 389,
   useSsl: process.env.AD_SSL === 'true',
-  baseDn: (process.env.AD_BASE_DN || 'DC=company,DC=local').trim(),
-  domainName: (process.env.AD_DOMAIN || 'CORP').trim(),
+  baseDn: (process.env.AD_BASE_DN || '').trim(),
+  domainName: (process.env.AD_DOMAIN || '').trim(),
   bindUserDn: (process.env.AD_BIND_USER || '').trim(),
   bindPassword: (process.env.AD_BIND_PASSWORD || '').trim(),
   userFilter: process.env.AD_USER_FILTER || '(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))',
-  groupAdminDn: process.env.AD_GROUP_ADMIN || 'CN=IT_Admins,OU=SecurityGroups,DC=company,DC=local',
-  groupManagerDn: process.env.AD_GROUP_MANAGER || 'CN=Category_Managers,OU=SecurityGroups,DC=company,DC=local',
+  groupAdminDn: (process.env.AD_GROUP_ADMIN || '').trim(),
+  groupManagerDn: (process.env.AD_GROUP_MANAGER || '').trim(),
   autoCreateUser: true,
 };
 
@@ -120,12 +120,27 @@ async function startServer() {
   app.get('/api/ad/status', async (req, res) => {
     const host = cleanHost(serverAdConfig.serverHost);
     const port = Number(serverAdConfig.port || 389);
+    if (!host) {
+      return res.json({
+        connected: false,
+        configured: false,
+        serverHost: '',
+        port,
+        latencyMs: 0,
+        message: 'آدرس سرور اکتیو دایرکتوری در تنظیمات سامانه پیکربندی نشده است.',
+        error: 'تنظیمات سرور دامنه خالی است',
+      });
+    }
     const tcp = await testTcpConnection(host, port, 1500);
     res.json({
       connected: tcp.reachable,
+      configured: true,
       serverHost: host,
       port,
       latencyMs: tcp.latencyMs,
+      message: tcp.reachable
+        ? `ارتباط با کنترلر دامنه در آدرس ${host}:${port} برقرار است`
+        : `عدم برقراری ارتباط با سرور دامنه در آدرس ${host}:${port} (${tcp.error || 'عدم پاسخگویی'})`,
       error: tcp.error || null,
     });
   });
@@ -270,8 +285,17 @@ async function startServer() {
     const host = cleanHost(effectiveConfig.serverHost);
     const port = Number(effectiveConfig.port || 389);
     const useSsl = Boolean(effectiveConfig.useSsl);
-    const domainName = (domain || effectiveConfig.domainName || 'CORP').toString().trim().toUpperCase();
+    const domainName = (domain || effectiveConfig.domainName || '').toString().trim().toUpperCase();
     const baseDn = (effectiveConfig.baseDn || '').toString().trim();
+
+    if (!host) {
+      return res.json({
+        success: false,
+        connected: false,
+        code: 'AD_NOT_CONFIGURED',
+        message: 'آدرس سرور اکتیو دایرکتوری در سامانه تنظیم نشده است. لطفاً ابتدا در پنل مدیریت مشخصات سرور دامنه را وارد فرمایید.',
+      });
+    }
 
     let cleanUser = username.trim();
     if (cleanUser.includes('\\')) {
@@ -289,9 +313,6 @@ async function startServer() {
         code: 'AD_UNREACHABLE',
         message: `عدم برقراری ارتباط با کنترلر دامنه در آدرس ${host}:${port}: سرور در دسترس نیست یا ارتباط شبکه قطع است (${tcp.error || 'خطا'}).`,
         error: tcp.error,
-        allowOfflineFallback: true,
-        cleanUser,
-        domainName,
       });
     }
 

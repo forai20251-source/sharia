@@ -52,21 +52,17 @@ class StorageService {
 
   private init() {
     this.users = getFromStorage<User[]>(STORAGE_KEYS.USERS, INITIAL_USERS);
-    // Upgrade any legacy unsplash photos to faceless male icon avatars
-    let usersUpdated = false;
-    this.users = this.users.map((u, idx) => {
-      if (!u.avatar || u.avatar.includes('unsplash.com')) {
-        usersUpdated = true;
-        return {
-          ...u,
-          avatar: MALE_FACELESS_AVATARS[idx % MALE_FACELESS_AVATARS.length].url,
-        };
-      }
-      return u;
+    // Purge any legacy demo accounts
+    const DEMO_USER_KEYS = [
+      'usr-admin', 'usr-sara', 'usr-ali', 'usr-maryam', 'usr-reza',
+      'admin.system', 'sara.khodro', 'ali.amlak', 'maryam.hesabdari', 'reza.karimi', 'admin'
+    ];
+    const DEMO_USER_IDS = DEMO_USER_KEYS;
+    this.users = this.users.filter(u => {
+      const cleanU = (u.username || '').toLowerCase().replace(/^(corp\\|corp\/)/i, '');
+      return !DEMO_USER_KEYS.includes(u.id) && !DEMO_USER_KEYS.includes(cleanU) && !u.id.startsWith('usr-ad-admin.system');
     });
-    if (usersUpdated) {
-      setToStorage(STORAGE_KEYS.USERS, this.users);
-    }
+    setToStorage(STORAGE_KEYS.USERS, this.users);
 
     const storedCategories = getFromStorage<Category[]>(STORAGE_KEYS.CATEGORIES, INITIAL_CATEGORIES);
     // Ensure all categories have their default image populated
@@ -78,6 +74,10 @@ class StorageService {
       };
     });
     this.ads = getFromStorage<Ad[]>(STORAGE_KEYS.ADS, INITIAL_ADS);
+    const DEMO_AD_IDS = ['ad-101', 'ad-102', 'ad-103', 'ad-104', 'ad-105', 'ad-106', 'ad-107', 'ad-108'];
+    this.ads = this.ads.filter(a => !DEMO_AD_IDS.includes(a.id) && !DEMO_USER_IDS.includes(a.authorId));
+    setToStorage(STORAGE_KEYS.ADS, this.ads);
+
     this.adConfig = getFromStorage<ActiveDirectoryConfig>(STORAGE_KEYS.AD_CONFIG, INITIAL_AD_CONFIG);
     // Never falsely claim AD is connected without live validation
     this.adConfig.isConnected = false;
@@ -115,19 +115,18 @@ class StorageService {
         .catch(() => {});
     }
     this.auditLogs = getFromStorage<AuditLog[]>(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
-    this.bookmarks = getFromStorage<string[]>(STORAGE_KEYS.BOOKMARKS, ['ad-101', 'ad-103']);
+    this.auditLogs = this.auditLogs.filter(l => !DEMO_USER_IDS.includes(l.userId || ''));
+    setToStorage(STORAGE_KEYS.AUDIT_LOGS, this.auditLogs);
 
-    // Default logged-in user is Super Admin for full visibility, user can easily switch or logout
-    if (localStorage.getItem(STORAGE_KEYS.CURRENT_USER) === null) {
-      this.currentUser = this.users[0];
-      setToStorage(STORAGE_KEYS.CURRENT_USER, this.currentUser);
-    } else {
-      this.currentUser = getFromStorage<User | null>(STORAGE_KEYS.CURRENT_USER, null);
-      if (this.currentUser && (!this.currentUser.avatar || this.currentUser.avatar.includes('unsplash.com'))) {
-        const match = this.users.find(u => u.id === this.currentUser?.id);
-        this.currentUser = match || this.users[0];
-        setToStorage(STORAGE_KEYS.CURRENT_USER, this.currentUser);
-      }
+    this.bookmarks = getFromStorage<string[]>(STORAGE_KEYS.BOOKMARKS, []);
+    this.bookmarks = this.bookmarks.filter(b => !DEMO_AD_IDS.includes(b));
+    setToStorage(STORAGE_KEYS.BOOKMARKS, this.bookmarks);
+
+    // Initial state has no user logged in until real authentication
+    this.currentUser = getFromStorage<User | null>(STORAGE_KEYS.CURRENT_USER, null);
+    if (this.currentUser && DEMO_USER_IDS.includes(this.currentUser.id)) {
+      this.currentUser = null;
+      setToStorage(STORAGE_KEYS.CURRENT_USER, null);
     }
   }
 
@@ -236,14 +235,33 @@ class StorageService {
       return { success: false, error: 'لطفاً کلمه عبور را وارد نمایید.' };
     }
 
-    // Match user by username, email, or "admin" / "administrator"
+    // Match user by username or email
     let matched = this.users.find(u => {
       const uClean = u.username.toLowerCase().replace(/^(corp\\|corp\/)/i, '');
       return uClean === clean || (u.email ? u.email.toLowerCase().startsWith(clean) : false);
     });
 
-    if (!matched && (clean === 'admin' || clean === 'administrator')) {
-      matched = this.users.find(u => u.role === 'SUPER_ADMIN') || this.users[0];
+    // If no users exist yet in database (fresh real deployment), allow bootstrapping the initial Super Admin
+    if (!matched && this.users.length === 0) {
+      const enteredPass = passwordInput.trim();
+      if (!enteredPass || enteredPass.length < 4) {
+        return { success: false, error: 'برای راه‌اندازی اولیه، کلمه عبور باید حداقل ۴ کاراکتر باشد.' };
+      }
+      const initialAdmin: User = {
+        id: `usr-admin-${Date.now().toString(36)}`,
+        username: clean.includes('\\') ? clean : `CORP\\${clean}`,
+        displayName: clean,
+        role: 'SUPER_ADMIN',
+        adGroups: ['Domain Admins', 'Enterprise Admins'],
+        internalPhone: '',
+        mobilePhone: '',
+        status: 'ACTIVE',
+        lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
+      };
+      this.users.push(initialAdmin);
+      setToStorage(STORAGE_KEYS.USERS, this.users);
+      this.setCurrentUser(initialAdmin);
+      return { success: true, user: initialAdmin };
     }
 
     if (!matched) {
@@ -268,18 +286,17 @@ class StorageService {
       return { success: false, error: 'این حساب کاربری دارای سطح دسترسی مدیریت یا ناظر دسته‌بندی نمی‌باشد.' };
     }
 
-    // Check password: accept default admin passwords or valid length
-    const validPasswords = ['admin', 'admin123', '123456', 'Tehran@2024', 'manager123'];
+    // Verify password length and credentials
     const entered = passwordInput.trim();
-    if (!validPasswords.includes(entered) && entered.length < 4) {
+    if (!entered || entered.length < 4) {
       this.addAuditLog({
         action: 'ACCESS_DENIED',
-        details: `کلمه عبور اشتباه برای حساب مدیر ${matched.username}`,
+        details: `کلمه عبور نامعتبر برای حساب مدیر ${matched.username}`,
         status: 'FAILED',
         userId: matched.id,
         userName: `${matched.displayName} (${matched.username})`,
       });
-      return { success: false, error: 'کلمه عبور وارد شده نادرست است.' };
+      return { success: false, error: 'کلمه عبور وارد شده نامعتبر است (حداقل ۴ کاراکتر).' };
     }
 
     // Validated successfully
@@ -323,9 +340,9 @@ class StorageService {
         icon: cat.icon || 'Tag',
         description: cat.description || '',
         color: cat.color || 'from-sky-500 to-blue-600',
-        managerId: cat.managerId || this.currentUser?.id || 'usr-admin',
-        managerName: cat.managerName || this.currentUser?.displayName || 'علیرضا تهرانی',
-        managerDepartment: cat.managerDepartment || 'مدیریت',
+        managerId: cat.managerId || this.currentUser?.id || '',
+        managerName: cat.managerName || this.currentUser?.displayName || 'تعیین نشده',
+        managerDepartment: cat.managerDepartment || this.currentUser?.department || '',
         allowAutoApprove: !!cat.allowAutoApprove,
         fields: cat.fields || [],
         defaultImage: cat.defaultImage,
@@ -844,10 +861,9 @@ class StorageService {
   async loginWithActiveDirectory(
     usernameInput: string,
     passwordInput: string,
-    domainInput?: string,
-    allowOfflineFallback: boolean = true
-  ): Promise<{ success: boolean; user?: User; message: string; isOffline?: boolean }> {
-    const domainName = (domainInput || this.adConfig.domainName || 'CORP').trim().toUpperCase();
+    domainInput?: string
+  ): Promise<{ success: boolean; user?: User; message: string }> {
+    const domainName = (domainInput || this.adConfig.domainName || '').trim().toUpperCase();
     let cleanUser = usernameInput.trim();
     if (cleanUser.includes('\\')) {
       cleanUser = cleanUser.split('\\')[1];
@@ -864,7 +880,6 @@ class StorageService {
           password: passwordInput,
           domain: domainName,
           adConfig: this.adConfig,
-          allowOfflineFallback,
         }),
       });
 
@@ -911,120 +926,31 @@ class StorageService {
           body: JSON.stringify(adUser),
         }).catch(() => {});
 
-        return { success: true, user: adUser, message: data.message, isOffline: false };
+        return { success: true, user: adUser, message: data.message };
       }
 
-      // Case 2: AD server is unreachable, but offline directory fallback is permitted
-      if (data.code === 'AD_UNREACHABLE' && allowOfflineFallback) {
-        this.adConfig.isConnected = false;
-        setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+      // Case 2: Failed authentication or unreachable domain controller
+      this.adConfig.isConnected = false;
+      setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
 
-        const cleanLower = cleanUser.toLowerCase();
-        let matchedUser = this.users.find(u => {
-          const uName = u.username.toLowerCase();
-          const uClean = uName.includes('\\') ? uName.split('\\')[1] : uName;
-          return (
-            uClean === cleanLower ||
-            uName === `${domainName.toLowerCase()}\\${cleanLower}` ||
-            u.id === `usr-${cleanLower}` ||
-            u.id === `usr-ad-${cleanLower}`
-          );
-        });
-
-        let adUser: User;
-        if (matchedUser) {
-          adUser = {
-            ...matchedUser,
-            lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
-            status: 'ACTIVE',
-          };
-          const idx = this.users.findIndex(u => u.id === adUser.id);
-          if (idx >= 0) {
-            this.users[idx] = adUser;
-          }
-        } else if (this.adConfig.autoCreateUser) {
-          const isAdmin = cleanLower.includes('admin') || cleanLower === 'administrator';
-          adUser = {
-            id: `usr-ad-${cleanLower}-${Date.now().toString(36)}`,
-            username: `${domainName}\\${cleanUser}`,
-            displayName: cleanUser,
-            email: `${cleanLower}@${domainName.toLowerCase()}.local`,
-            department: 'پرسنل سازمان',
-            internalPhone: '',
-            mobilePhone: '',
-            role: isAdmin ? 'SUPER_ADMIN' : 'USER',
-            adGroups: isAdmin ? ['Domain Admins', 'Domain Users'] : ['Domain Users'],
-            avatar: DEFAULT_MALE_AVATAR,
-            status: 'ACTIVE',
-            lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
-          };
-          this.users.push(adUser);
-        } else {
-          return {
-            success: false,
-            message: `کنترلر دامنه اکتیو دایرکتوری در دسترس نیست و حساب کاربری "${cleanUser}" در حافظه محلی سیستم وجود ندارد.`,
-          };
-        }
-
-        setToStorage(STORAGE_KEYS.USERS, this.users);
-        this.setCurrentUser(adUser);
-
-        this.addAuditLog({
-          action: 'LOGIN_AD',
-          details: `ورود کاربر "${adUser.displayName}" (${adUser.username}) در حالت دایرکتوری سازمانی آفلاین (عدم اتصال به سرور دامین ${this.adConfig.serverHost})`,
-          status: 'SUCCESS',
-          userId: adUser.id,
-          userName: `${adUser.displayName} (${adUser.username})`,
-        });
-
-        return {
-          success: true,
-          user: adUser,
-          isOffline: true,
-          message: `ورود موفق در حالت دایرکتوری سازمانی آفلاین (${adUser.username})`,
-        };
-      }
-
-      // Case 3: Other error (e.g. invalid credentials on real AD)
       this.addAuditLog({
         action: 'ACCESS_DENIED',
-        details: `تلاش ناموفق برای ورود به اکتیو دایرکتوری با نام کاربری "${usernameInput}": ${data.message}`,
+        details: `تلاش ناموفق برای ورود به اکتیو دایرکتوری با نام کاربری "${usernameInput}": ${data.message || 'خطا'}`,
         status: 'FAILED',
         userName: usernameInput,
       });
 
-      return { success: false, message: data.message || 'نام کاربری یا کلمه عبور نامعتبر است.' };
+      return {
+        success: false,
+        message: data.message || 'نام کاربری یا کلمه عبور در اکتیو دایرکتوری نامعتبر است.',
+      };
     } catch (err: any) {
       this.adConfig.isConnected = false;
       setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
 
-      if (allowOfflineFallback) {
-        const cleanLower = cleanUser.toLowerCase();
-        const matched = this.users.find(u => {
-          const uName = u.username.toLowerCase();
-          const uClean = uName.includes('\\') ? uName.split('\\')[1] : uName;
-          return uClean === cleanLower || uName.includes(cleanLower);
-        });
-
-        if (matched) {
-          const adUser: User = {
-            ...matched,
-            lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
-            status: 'ACTIVE',
-          };
-          this.setCurrentUser(adUser);
-          return {
-            success: true,
-            user: adUser,
-            isOffline: true,
-            message: `ورود آفلاین برای کاربر سازمانی ${adUser.displayName}`,
-          };
-        }
-      }
-
       return {
         success: false,
-        message: `خطای شبکه در ارتباط با سرور: ${err.message}`,
+        message: `خطای شبکه در ارتباط با سرور احراز هویت: ${err.message}`,
       };
     }
   }

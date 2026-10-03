@@ -402,7 +402,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                       onChange={e => setUsername(e.target.value)}
                       dir="ltr"
                       className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
-                      placeholder="CORP\username"
+                      placeholder="username"
                     />
                   </div>
                 </div>

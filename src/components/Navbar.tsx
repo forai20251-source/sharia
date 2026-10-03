@@ -210,7 +210,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           )}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-1" dir="ltr">
-                          {currentUser.username}
+                          {currentUser.username.includes('\\') ? currentUser.username.split('\\')[1] : currentUser.username}
                         </div>
                         {currentUser.department && (
                           <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-1">
@@ -220,7 +220,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         )}
                         <div className="mt-2 text-[10px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 rounded-lg p-1.5 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5">
                           <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                          <span>احراز هویت شده از طریق Active Directory (ویندوز)</span>
+                          <span>احراز هویت معتبر سازمانی</span>
                         </div>
 
                         {/* Solar Month Quota & Restrictions Badge */}

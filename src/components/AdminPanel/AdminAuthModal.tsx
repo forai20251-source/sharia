@@ -40,14 +40,14 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Set default username suggestion when opened
+  // Set default username suggestion when opened if current user is admin
   useEffect(() => {
     if (isOpen) {
       if (currentUser && (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'CATEGORY_MANAGER')) {
         setUsername(currentUser.username.replace(/^(corp\\|corp\/)/i, ''));
       } else {
         const firstAdmin = users.find(u => u.role === 'SUPER_ADMIN');
-        setUsername(firstAdmin ? firstAdmin.username.replace(/^(corp\\|corp\/)/i, '') : 'admin');
+        setUsername(firstAdmin ? firstAdmin.username.replace(/^(corp\\|corp\/)/i, '') : '');
       }
       setPassword('');
       setErrorMsg('');
@@ -83,12 +83,6 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
     }, 350);
   };
 
-  const handleQuickFill = (demoUser: string, demoPass: string) => {
-    setUsername(demoUser);
-    setPassword(demoPass);
-    setErrorMsg('');
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4" dir="rtl">
       {/* Backdrop */}
@@ -119,7 +113,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
 
           <div className="mt-4 flex items-center gap-2 text-[11px] bg-slate-800/90 text-slate-300 px-3 py-1.5 rounded-xl border border-slate-700/60">
             <ShieldCheck className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-            <span>نیازمند نام کاربری و رمز عبور با مجوز Super Admin یا Category Manager</span>
+            <span>نیازمند نام کاربری و کلمه عبور با سطح دسترسی مدیریت سامانه</span>
           </div>
         </div>
 
@@ -142,7 +136,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                 type="text"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
-                placeholder="مثلاً: admin یا sara.khodro"
+                placeholder="نام کاربری حساب مدیر..."
                 className="w-full bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 font-mono outline-none transition pr-10 text-left"
                 dir="ltr"
                 autoFocus
@@ -173,43 +167,6 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                 tabIndex={-1}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Quick Demo Access Chips */}
-          <div className="pt-1">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">حساب‌های کاربری پیش‌فرض:</span>
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">رمز: admin123</span>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleQuickFill('admin', 'admin123')}
-                className="text-right p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:border-rose-200 dark:hover:border-rose-800 hover:text-rose-700 dark:hover:text-rose-300 text-slate-700 dark:text-slate-300 text-[11px] font-medium transition flex items-center justify-between cursor-pointer"
-              >
-                <div className="truncate">
-                  <div className="font-bold truncate">علیرضا تهرانی</div>
-                  <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">admin</div>
-                </div>
-                <span className="text-[9px] bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 px-1 py-0.5 rounded font-bold shrink-0">
-                  مدیر ارشد
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickFill('sara.khodro', 'admin123')}
-                className="text-right p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:border-amber-200 dark:hover:border-amber-800 hover:text-amber-700 dark:hover:text-amber-300 text-slate-700 dark:text-slate-300 text-[11px] font-medium transition flex items-center justify-between cursor-pointer"
-              >
-                <div className="truncate">
-                  <div className="font-bold truncate">سارا محمدی</div>
-                  <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">sara.khodro</div>
-                </div>
-                <span className="text-[9px] bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 px-1 py-0.5 rounded font-bold shrink-0">
-                  مدیر خودرو
-                </span>
               </button>
             </div>
           </div>
