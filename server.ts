@@ -105,6 +105,17 @@ async function startServer() {
     next();
   });
 
+  // Download proposal Word document (.docx)
+  app.get(['/api/download-proposal', '/divar-proposal.docx'], (req, res) => {
+    const docPath = path.resolve(__dirname, 'divar-proposal.docx');
+    if (fs.existsSync(docPath)) {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', 'attachment; filename="divar-organizational-proposal.docx"');
+      return res.sendFile(docPath);
+    }
+    res.status(404).json({ success: false, message: 'فایل پروپوزال یافت نشد.' });
+  });
+
   // ----------------------------------------------------
   // REAL ACTIVE DIRECTORY (LDAP) ENDPOINTS
   // ----------------------------------------------------
