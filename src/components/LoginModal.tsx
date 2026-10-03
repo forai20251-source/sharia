@@ -46,8 +46,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setErrorMsg('');
 
     try {
-      // The domain is managed strictly by the administrator in the Admin Panel
-      const res = await storageService.loginWithActiveDirectory(usernameInput.trim(), passwordInput);
+      const res = await storageService.login(usernameInput.trim(), passwordInput);
       if (res.success && res.user) {
         onSelectUser(res.user);
         onClose();

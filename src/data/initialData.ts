@@ -360,7 +360,7 @@ export const INITIAL_AD_POSTING_POLICY: AdPostingPolicy = {
   maxAdsPerSolarMonth: 5,
   maxActiveAdsPerUser: 3,
   maxUrgentBadgesPerMonth: 2,
-  coolDownHours: 1,
+  coolDownHours: 24,
   bypassForAdminsAndManagers: true,
   minTitleLength: 6,
   maxTitleLength: 80,

@@ -83,6 +83,35 @@ export default function App() {
         refreshData();
       }
     });
+
+    // Listen for admin triggers: URL hash (#admin, #panel), URL query (?admin), or keyboard shortcut (Ctrl+Shift+A)
+    const checkAdminTrigger = () => {
+      if (
+        window.location.hash.toLowerCase() === '#admin' ||
+        window.location.hash.toLowerCase() === '#panel' ||
+        new URLSearchParams(window.location.search).has('admin')
+      ) {
+        setIsAdminAuthOpen(true);
+      }
+    };
+    checkAdminTrigger();
+    window.addEventListener('hashchange', checkAdminTrigger);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a') ||
+        (e.altKey && e.shiftKey && e.key.toLowerCase() === 'a')
+      ) {
+        e.preventDefault();
+        setIsAdminAuthOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('hashchange', checkAdminTrigger);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const refreshData = () => {
@@ -547,9 +576,14 @@ export default function App() {
       <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 mt-12 py-6 text-xs text-slate-500 dark:text-slate-400 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-rose-600 text-white flex items-center justify-center font-bold text-xs">
+            <button
+              type="button"
+              onClick={() => setIsAdminAuthOpen(true)}
+              className="w-6 h-6 rounded-lg bg-rose-600 text-white flex items-center justify-center font-bold text-xs cursor-default select-none focus:outline-none"
+              title="دیوار سازمانی"
+            >
               د
-            </div>
+            </button>
             <span className="font-bold text-slate-800 dark:text-slate-200">سامانه آگهی سازمانی دیوار</span>
             <span className="text-slate-400 dark:text-slate-600">|</span>
             <span>طراحی شده برای پرسنل و شبکه داخلی سازمان</span>

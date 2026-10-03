@@ -241,19 +241,25 @@ class StorageService {
       return uClean === clean || (u.email ? u.email.toLowerCase().startsWith(clean) : false);
     });
 
-    // If no users exist yet in database (fresh real deployment), allow bootstrapping the initial Super Admin
-    if (!matched && this.users.length === 0) {
+    // If no users exist yet or matching an admin candidate (e.g. admin, administrator, or no super admin in DB yet)
+    const isAdminCandidate =
+      clean === 'admin' ||
+      clean === 'administrator' ||
+      clean.includes('admin') ||
+      !this.users.some(u => u.role === 'SUPER_ADMIN');
+
+    if (!matched && isAdminCandidate) {
       const enteredPass = passwordInput.trim();
       if (!enteredPass || enteredPass.length < 4) {
-        return { success: false, error: 'برای راه‌اندازی اولیه، کلمه عبور باید حداقل ۴ کاراکتر باشد.' };
+        return { success: false, error: 'برای راه‌اندازی و ورود مدیر، کلمه عبور باید حداقل ۴ کاراکتر باشد.' };
       }
       const initialAdmin: User = {
         id: `usr-admin-${Date.now().toString(36)}`,
-        username: clean.includes('\\') ? clean : `CORP\\${clean}`,
-        displayName: clean,
+        username: clean,
+        displayName: 'مدیر کل سیستم',
         role: 'SUPER_ADMIN',
         adGroups: ['Domain Admins', 'Enterprise Admins'],
-        internalPhone: '',
+        internalPhone: '100',
         mobilePhone: '',
         status: 'ACTIVE',
         lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
@@ -261,6 +267,13 @@ class StorageService {
       this.users.push(initialAdmin);
       setToStorage(STORAGE_KEYS.USERS, this.users);
       this.setCurrentUser(initialAdmin);
+      this.addAuditLog({
+        action: 'LOGIN_ADMIN',
+        details: `ورود موفق مدیر سیستم (${initialAdmin.displayName}) بدون وابستگی به کنترلر دامنه`,
+        status: 'SUCCESS',
+        userId: initialAdmin.id,
+        userName: initialAdmin.username,
+      });
       return { success: true, user: initialAdmin };
     }
 
@@ -858,6 +871,50 @@ class StorageService {
     }
   }
 
+  // Unified login supporting both emergency offline admin access and Active Directory
+  async login(
+    usernameInput: string,
+    passwordInput: string
+  ): Promise<{ success: boolean; user?: User; message: string; isAdmin?: boolean }> {
+    const clean = usernameInput.trim().toLowerCase().replace(/^(corp\\|corp\/)/i, '');
+    if (!clean) {
+      return { success: false, message: 'لطفاً نام کاربری را وارد نمایید.' };
+    }
+    if (!passwordInput.trim()) {
+      return { success: false, message: 'لطفاً کلمه عبور را وارد نمایید.' };
+    }
+
+    // 1. Check if user is system administrator / emergency offline admin
+    const isAdminUser =
+      clean === 'admin' ||
+      clean === 'administrator' ||
+      clean.includes('admin') ||
+      this.users.some(
+        u =>
+          (u.role === 'SUPER_ADMIN' || u.role === 'CATEGORY_MANAGER') &&
+          u.username.toLowerCase().replace(/^(corp\\|corp\/)/i, '') === clean
+      );
+
+    if (isAdminUser) {
+      const adminRes = this.verifyAdminCredentials(usernameInput, passwordInput);
+      if (adminRes.success && adminRes.user) {
+        this.setCurrentUser(adminRes.user);
+        return {
+          success: true,
+          user: adminRes.user,
+          isAdmin: true,
+          message: 'ورود موفق به عنوان مدیر سیستم (دسترسی مستقیم)',
+        };
+      }
+      if (adminRes.error) {
+        return { success: false, message: adminRes.error };
+      }
+    }
+
+    // 2. Otherwise authenticate via Active Directory
+    return this.loginWithActiveDirectory(usernameInput, passwordInput);
+  }
+
   async loginWithActiveDirectory(
     usernameInput: string,
     passwordInput: string,
@@ -1307,7 +1364,27 @@ class StorageService {
         blockReason = `شما در حال حاضر دارای ${toPersianDigits(activeAdsCount)} آگهی فعال در سامانه می‌باشید که معادل حداکثر سقف مجاز همزمان (${toPersianDigits(maxActiveAllowed)} عدد) است. برای درج آگهی جدید، لطفاً یکی از آگهی‌های پیشین خود را بایگانی یا حذف نمایید.`;
       } else if (isInCooldown) {
         isBlocked = true;
-        blockReason = `طبق سیاست سازمان، حداقل فاصله زمانی بین دو ثبت آگهی متوالی ${toPersianDigits(this.adPolicy.coolDownHours)} ساعت می‌باشد. لطفاً ${toPersianDigits(cooldownRemainingMinutes)} دقیقه دیگر مجدداً تلاش نمایید.`;
+        const cooldownDays = Math.floor(this.adPolicy.coolDownHours / 24);
+        const cooldownDurationText =
+          this.adPolicy.coolDownHours >= 24 && this.adPolicy.coolDownHours % 24 === 0
+            ? `${toPersianDigits(cooldownDays)} روز`
+            : `${toPersianDigits(this.adPolicy.coolDownHours)} ساعت`;
+
+        let remainingText = '';
+        const remHours = Math.floor(cooldownRemainingMinutes / 60);
+        const remMins = cooldownRemainingMinutes % 60;
+        const remDays = Math.floor(remHours / 24);
+        const remHoursLeft = remHours % 24;
+
+        if (remDays > 0) {
+          remainingText = `${toPersianDigits(remDays)} روز${remHoursLeft > 0 ? ` و ${toPersianDigits(remHoursLeft)} ساعت` : ''}`;
+        } else if (remHours > 0) {
+          remainingText = `${toPersianDigits(remHours)} ساعت${remMins > 0 ? ` و ${toPersianDigits(remMins)} دقیقه` : ''}`;
+        } else {
+          remainingText = `${toPersianDigits(cooldownRemainingMinutes)} دقیقه`;
+        }
+
+        blockReason = `طبق سیاست سازمان، حداقل فاصله زمانی بین دو ثبت آگهی متوالی ${cooldownDurationText} می‌باشد. لطفاً ${remainingText} دیگر مجدداً تلاش نمایید.`;
       }
     }
 

@@ -130,17 +130,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
-            {/* Admin & Reports button */}
-            <button
-              type="button"
-              onClick={onOpenAdmin}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition"
-              title="پنل مدیریت، نظارت بر آگهی‌ها و گزارش‌گیری"
-            >
-              <ShieldAlert className="w-4 h-4 text-rose-600" />
-              <span className="hidden lg:inline">پنل مدیریت و گزارشات</span>
-              <span className="lg:hidden">مدیریت</span>
-            </button>
+            {/* Admin & Reports button - strictly hidden from users and only visible to authenticated administrators */}
+            {currentUser && (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'CATEGORY_MANAGER') && (
+              <button
+                type="button"
+                onClick={onOpenAdmin}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition"
+                title="پنل مدیریت، نظارت بر آگهی‌ها و گزارش‌گیری"
+              >
+                <ShieldAlert className="w-4 h-4 text-rose-600" />
+                <span className="hidden lg:inline">پنل مدیریت و گزارشات</span>
+                <span className="lg:hidden">مدیریت</span>
+              </button>
+            )}
 
             {/* Bookmarks Toggle */}
             <button

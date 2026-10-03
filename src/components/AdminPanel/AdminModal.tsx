@@ -2320,11 +2320,20 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 dark:text-white outline-none"
                     >
                       <option value={0}>بدون وقفه (بلافاصله مجاز)</option>
-                      <option value={1}>حداقل ۱ ساعت فاصله</option>
-                      <option value={2}>حداقل ۲ ساعت فاصله</option>
-                      <option value={6}>حداقل ۶ ساعت فاصله</option>
-                      <option value={12}>حداقل ۱۲ ساعت فاصله</option>
-                      <option value={24}>حداقل ۲۴ ساعت (۱ روز)</option>
+                      <option value={24}>۱ روز فاصله (۲۴ ساعت)</option>
+                      <option value={48}>۲ روز فاصله (۴۸ ساعت)</option>
+                      <option value={72}>۳ روز فاصله (۷۲ ساعت)</option>
+                      <option value={96}>۴ روز فاصله</option>
+                      <option value={120}>۵ روز فاصله</option>
+                      <option value={144}>۶ روز فاصله</option>
+                      <option value={168}>۷ روز فاصله (۱ هفته)</option>
+                      <option value={192}>۸ روز فاصله</option>
+                      <option value={216}>۹ روز فاصله</option>
+                      <option value={240}>۱۰ روز فاصله</option>
+                      <option value={264}>۱۱ روز فاصله</option>
+                      <option value={288}>۱۲ روز فاصله</option>
+                      <option value={312}>۱۳ روز فاصله</option>
+                      <option value={336}>۱۴ روز فاصله (۲ هفته)</option>
                     </select>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
