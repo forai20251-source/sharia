@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Search,
   Eye,
+  EyeOff,
   AlertCircle,
   ExternalLink,
   ChevronRight,
@@ -72,6 +73,7 @@ import { EditAdModal } from '../EditAdModal';
 import { toPersianDigits, formatPersianNumber, formatJalaliDate } from '../../utils/jalali';
 import { MYSQL_SCHEMA_SQL, NUXT_SERVER_CODE_GUIDE } from '../../data/mysqlSchema';
 import { OFFLINE_PRESET_IMAGES, OFFLINE_IMG_DEFAULT } from '../../data/offlineImages';
+import { storageService } from '../../services/storageService';
 
 export const CATEGORY_ICON_OPTIONS = [
   { name: 'Package', label: 'لوازم و کالا', icon: Package },
@@ -330,6 +332,11 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [adGroupManager, setAdGroupManager] = useState(adConfig.groupManagerDn);
   const [adUseSsl, setAdUseSsl] = useState(adConfig.useSsl);
   const [adAutoCreate, setAdAutoCreate] = useState(adConfig.autoCreateUser);
+
+  // Local/Emergency Admin Password state
+  const [localAdminPass, setLocalAdminPass] = useState(storageService.getAdminLocalPassword());
+  const [showLocalAdminPass, setShowLocalAdminPass] = useState(false);
+  const [localAdminPassSaved, setLocalAdminPassSaved] = useState(false);
 
   useEffect(() => {
     setAdHost(adConfig.serverHost);
@@ -2744,6 +2751,59 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   >
                     ذخیره تنظیمات دایرکتوری
                   </button>
+                </div>
+
+                {/* Emergency Local Admin Password Section */}
+                <div className="mt-5 p-4 bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl border border-amber-200 dark:border-amber-800/80 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-amber-900 dark:text-amber-200">
+                    <Key className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span>کلمه عبور ورود محلی و اضطراری مدیر سیستم (admin.system / admin)</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                    این رمز عبور جهت ورود اختصاصی مدیر سیستم در زمان‌هایی که شبکه با سرور اکتیو دایرکتوری قطع است یا سرور دامین در دسترس نیست، استفاده می‌شود. در حالت عادی، رمز عبور اصلی از اکتیو دایرکتوری ویندوز سرور استعلام می‌گردد.
+                  </p>
+                  <div className="flex flex-col sm:flex-row items-center gap-3 pt-1">
+                    <div className="relative flex-1 w-full">
+                      <input
+                        type={showLocalAdminPass ? 'text' : 'password'}
+                        value={localAdminPass}
+                        onChange={e => setLocalAdminPass(e.target.value)}
+                        placeholder="کلمه عبور جدید مدیر (حداقل ۴ کاراکتر)..."
+                        dir="ltr"
+                        className="w-full bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 outline-none pr-8"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLocalAdminPass(!showLocalAdminPass)}
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      >
+                        {showLocalAdminPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!localAdminPass.trim() || localAdminPass.trim().length < 4) {
+                          alert('کلمه عبور باید حداقل ۴ کاراکتر باشد.');
+                          return;
+                        }
+                        const ok = storageService.setAdminLocalPassword(localAdminPass.trim());
+                        if (ok) {
+                          setLocalAdminPassSaved(true);
+                          setTimeout(() => setLocalAdminPassSaved(false), 3000);
+                        }
+                      }}
+                      className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition cursor-pointer shrink-0"
+                    >
+                      ذخیره کلمه عبور مدیر
+                    </button>
+                  </div>
+                  {localAdminPassSaved && (
+                    <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 animate-in fade-in">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>کلمه عبور اختصاصی مدیر سیستم با موفقیت ثبت و فعال شد.</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

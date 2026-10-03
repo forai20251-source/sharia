@@ -14,6 +14,7 @@ const STORAGE_KEYS = {
   AUDIT_LOGS: 'divar_audit_logs_v1',
   BOOKMARKS: 'divar_bookmarks_v1',
   AD_POLICY: 'divar_ad_policy_v1',
+  ADMIN_LOCAL_PASSWORD: 'divar_admin_local_password_v1',
 };
 
 function getFromStorage<T>(key: string, fallback: T): T {
@@ -324,6 +325,19 @@ class StorageService {
       return { success: false, error: 'کلمه عبور وارد شده نامعتبر است (حداقل ۴ کاراکتر).' };
     }
 
+    // If a custom local admin password is set by admin, enforce it
+    const savedLocalPass = this.getAdminLocalPassword();
+    if (savedLocalPass && entered !== savedLocalPass) {
+      this.addAuditLog({
+        action: 'ACCESS_DENIED',
+        details: `کلمه عبور اشتباه برای حساب مدیر ${matched.username}`,
+        status: 'FAILED',
+        userId: matched.id,
+        userName: `${matched.displayName} (${matched.username})`,
+      });
+      return { success: false, error: 'کلمه عبور وارد شده برای مدیر سیستم نادرست است.' };
+    }
+
     // Validated successfully
     this.addAuditLog({
       action: 'LOGIN_ADMIN',
@@ -334,6 +348,23 @@ class StorageService {
     });
 
     return { success: true, user: matched };
+  }
+
+  getAdminLocalPassword(): string {
+    return getFromStorage<string>(STORAGE_KEYS.ADMIN_LOCAL_PASSWORD, '');
+  }
+
+  setAdminLocalPassword(pass: string): boolean {
+    const trimmed = pass.trim();
+    if (trimmed.length < 4) return false;
+    setToStorage(STORAGE_KEYS.ADMIN_LOCAL_PASSWORD, trimmed);
+    this.addAuditLog({
+      action: 'CONFIG_CHANGE',
+      details: 'تغییر رمز عبور ورود اضطراری / محلی مدیر سیستم',
+      status: 'SUCCESS',
+      userName: 'مدیر کل سیستم',
+    });
+    return true;
   }
 
   // Categories

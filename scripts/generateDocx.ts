@@ -254,15 +254,15 @@ async function generateProposal() {
               new TableRow({
                 children: [
                   new TableCell({
-                    children: [new Paragraph({ text: 'بخش', bold: true, bidirectional: true })],
+                    children: [new Paragraph({ children: [new TextRun({ text: 'بخش', bold: true })], bidirectional: true })],
                     shading: { fill: 'E2E8F0', type: ShadingType.CLEAR },
                   }),
                   new TableCell({
-                    children: [new Paragraph({ text: 'تکنولوژی و فریم‌ورک', bold: true, bidirectional: true })],
+                    children: [new Paragraph({ children: [new TextRun({ text: 'تکنولوژی و فریم‌ورک', bold: true })], bidirectional: true })],
                     shading: { fill: 'E2E8F0', type: ShadingType.CLEAR },
                   }),
                   new TableCell({
-                    children: [new Paragraph({ text: 'ویژگی‌ها', bold: true, bidirectional: true })],
+                    children: [new Paragraph({ children: [new TextRun({ text: 'ویژگی‌ها', bold: true })], bidirectional: true })],
                     shading: { fill: 'E2E8F0', type: ShadingType.CLEAR },
                   }),
                 ],
@@ -408,15 +408,15 @@ async function generateProposal() {
               new TableRow({
                 children: [
                   new TableCell({
-                    children: [new Paragraph({ text: 'معیار ارزیابی', bold: true, bidirectional: true })],
+                    children: [new Paragraph({ children: [new TextRun({ text: 'معیار ارزیابی', bold: true })], bidirectional: true })],
                     shading: { fill: 'E2E8F0', type: ShadingType.CLEAR },
                   }),
                   new TableCell({
-                    children: [new Paragraph({ text: 'روش‌های سنتی (گروه تلگرام/بورد)', bold: true, bidirectional: true })],
+                    children: [new Paragraph({ children: [new TextRun({ text: 'روش‌های سنتی (گروه تلگرام/بورد)', bold: true })], bidirectional: true })],
                     shading: { fill: 'E2E8F0', type: ShadingType.CLEAR },
                   }),
                   new TableCell({
-                    children: [new Paragraph({ text: 'سامانه بومی دیوار سازمانی', bold: true, bidirectional: true })],
+                    children: [new Paragraph({ children: [new TextRun({ text: 'سامانه بومی دیوار سازمانی', bold: true })], bidirectional: true })],
                     shading: { fill: 'E2E8F0', type: ShadingType.CLEAR },
                   }),
                 ],
@@ -425,28 +425,28 @@ async function generateProposal() {
                 children: [
                   new TableCell({ children: [new Paragraph({ text: 'امنیت و کنترل دسترسی', bidirectional: true })] }),
                   new TableCell({ children: [new Paragraph({ text: 'بسیار ضعیف، خروج اطلاعات از سازمان', bidirectional: true })] }),
-                  new TableCell({ children: [new Paragraph({ text: 'عالی، احراز هویت متمرکز با اکتیو دایرکتوری ویندوز', bold: true, bidirectional: true })] }),
+                  new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'عالی، احراز هویت متمرکز با اکتیو دایرکتوری ویندوز', bold: true })], bidirectional: true })] }),
                 ],
               }),
               new TableRow({
                 children: [
                   new TableCell({ children: [new Paragraph({ text: 'سهمیه‌بندی و عدالت', bidirectional: true })] }),
                   new TableCell({ children: [new Paragraph({ text: 'ناممکن، امکان اسپم و پیام رگباری', bidirectional: true })] }),
-                  new TableCell({ children: [new Paragraph({ text: 'کاملاً خودکار با سهمیه ماهانه و فاصله ۱ تا ۱۴ روز', bold: true, bidirectional: true })] }),
+                  new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'کاملاً خودکار با سهمیه ماهانه و فاصله ۱ تا ۱۴ روز', bold: true })], bidirectional: true })] }),
                 ],
               }),
               new TableRow({
                 children: [
                   new TableCell({ children: [new Paragraph({ text: 'قابلیت جستجو و دسته‌بندی', bidirectional: true })] }),
                   new TableCell({ children: [new Paragraph({ text: 'پیچیده و گم شدن پیام‌ها در چت', bidirectional: true })] }),
-                  new TableCell({ children: [new Paragraph({ text: 'جستجوی هوشمند در برند، متراژ، قیمت و فیلدها', bold: true, bidirectional: true })] }),
+                  new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'جستجوی هوشمند در برند، متراژ، قیمت و فیلدها', bold: true })], bidirectional: true })] }),
                 ],
               }),
               new TableRow({
                 children: [
                   new TableCell({ children: [new Paragraph({ text: 'نظارت و مدیریت تخلفات', bidirectional: true })] }),
                   new TableCell({ children: [new Paragraph({ text: 'دشوار و زمان‌بر', bidirectional: true })] }),
-                  new TableCell({ children: [new Paragraph({ text: 'پنل مدیریت یکپارچه، رد/تایید و گزارشات جامع', bold: true, bidirectional: true })] }),
+                  new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'پنل مدیریت یکپارچه، رد/تایید و گزارشات جامع', bold: true })], bidirectional: true })] }),
                 ],
               }),
             ],
