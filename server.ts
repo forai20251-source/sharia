@@ -95,6 +95,16 @@ async function startServer() {
 
   app.use(express.json());
 
+  // URL rewrite middleware: seamlessly handle requests under /divar/api/* as /api/*
+  app.use((req, res, next) => {
+    if (req.url.startsWith('/divar/api/')) {
+      req.url = req.url.replace('/divar/api', '/api');
+    } else if (req.url === '/divar/api') {
+      req.url = '/api';
+    }
+    next();
+  });
+
   // ----------------------------------------------------
   // REAL ACTIVE DIRECTORY (LDAP) ENDPOINTS
   // ----------------------------------------------------
@@ -1243,8 +1253,10 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    // Serve static files both at /divar and at root /
+    app.use('/divar', express.static(path.resolve(__dirname, 'dist')));
     app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (req, res) => {
+    app.get(['/divar', '/divar/*', '*'], (req, res) => {
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   }

@@ -35,6 +35,18 @@ function setToStorage<T>(key: string, value: T): void {
   }
 }
 
+// Ensure API requests correctly prefix the /divar subpath when hosted under http://shahr.ir/divar
+function getApiUrl(endpoint: string): string {
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (
+    typeof window !== 'undefined' &&
+    (window.location.pathname.startsWith('/divar') || window.location.pathname.includes('/divar'))
+  ) {
+    return `/divar${cleanEndpoint}`;
+  }
+  return cleanEndpoint;
+}
+
 class StorageService {
   private users: User[] = [];
   private categories: Category[] = [];
@@ -82,7 +94,7 @@ class StorageService {
     // Never falsely claim AD is connected without live validation
     this.adConfig.isConnected = false;
     if (typeof window !== 'undefined') {
-      fetch('/api/ad/status')
+      fetch(getApiUrl('/api/ad/status'))
         .then(res => res.json())
         .then(status => {
           this.adConfig.isConnected = Boolean(status.connected);
@@ -98,7 +110,7 @@ class StorageService {
     }
     // Sync with backend .env config if available
     if (typeof window !== 'undefined') {
-      fetch('/api/mysql/config')
+      fetch(getApiUrl('/api/mysql/config'))
         .then(res => res.json())
         .then(cfg => {
           if (cfg && cfg.host) {
@@ -373,7 +385,7 @@ class StorageService {
 
     // Sync to MySQL backend
     if (typeof window !== 'undefined') {
-      fetch('/api/categories', {
+      fetch(getApiUrl('/api/categories'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(saved),
@@ -570,7 +582,7 @@ class StorageService {
 
     // Sync to MySQL backend
     if (typeof window !== 'undefined') {
-      fetch('/api/ads', {
+      fetch(getApiUrl('/api/ads'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newAd),
@@ -782,7 +794,7 @@ class StorageService {
     setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
 
     if (typeof window !== 'undefined') {
-      fetch('/api/ad/config', {
+      fetch(getApiUrl('/api/ad/config'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(this.adConfig),
@@ -802,7 +814,7 @@ class StorageService {
   ): Promise<{ success: boolean; latencyMs: number; message: string; details: any }> {
     try {
       const cfg = { ...this.adConfig, ...(overrideConfig || {}) };
-      const res = await fetch('/api/ad/test', {
+      const res = await fetch(getApiUrl('/api/ad/test'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg),
@@ -845,7 +857,7 @@ class StorageService {
 
   async checkActiveDirectoryStatus(): Promise<{ connected: boolean; message: string; latencyMs: number; host?: string; port?: number }> {
     try {
-      const res = await fetch('/api/ad/status');
+      const res = await fetch(getApiUrl('/api/ad/status'));
       if (!res.ok) {
         this.adConfig.isConnected = false;
         setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
@@ -929,7 +941,7 @@ class StorageService {
     }
 
     try {
-      const res = await fetch('/api/ad/login', {
+      const res = await fetch(getApiUrl('/api/ad/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -977,7 +989,7 @@ class StorageService {
           userName: `${adUser.displayName} (${adUser.username})`,
         });
 
-        fetch('/api/users', {
+        fetch(getApiUrl('/api/users'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(adUser),
@@ -1041,7 +1053,7 @@ class StorageService {
   }> {
     try {
       const cfg = { ...this.mysqlConfig, ...overrideConfig };
-      const res = await fetch('/api/mysql/test', {
+      const res = await fetch(getApiUrl('/api/mysql/test'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg),
@@ -1064,7 +1076,7 @@ class StorageService {
   async initMySQLSchema(overrideConfig?: Partial<MySQLConfig>): Promise<{ success: boolean; message: string }> {
     try {
       const cfg = { ...this.mysqlConfig, ...overrideConfig };
-      const res = await fetch('/api/mysql/init-schema', {
+      const res = await fetch(getApiUrl('/api/mysql/init-schema'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg),
@@ -1080,7 +1092,7 @@ class StorageService {
 
   async syncWithMySQL(): Promise<{ success: boolean; message: string; adsCount: number; categoriesCount: number; wasEmpty?: boolean }> {
     try {
-      const res = await fetch('/api/mysql/data');
+      const res = await fetch(getApiUrl('/api/mysql/data'));
       if (!res.ok) {
         throw new Error(`خطای سرور HTTP ${res.status}`);
       }
@@ -1155,7 +1167,7 @@ class StorageService {
 
   async seedToMySQL(): Promise<{ success: boolean; message: string }> {
     try {
-      const res = await fetch('/api/mysql/seed', {
+      const res = await fetch(getApiUrl('/api/mysql/seed'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1185,7 +1197,7 @@ class StorageService {
     message?: string;
   }> {
     try {
-      const res = await fetch('/api/mysql/stats');
+      const res = await fetch(getApiUrl('/api/mysql/stats'));
       return await res.json();
     } catch (err: any) {
       return {
