@@ -16,6 +16,8 @@ export interface User {
   adsCount?: number;
   customMonthlyQuota?: number; // سهمیه اختصاصی ماهانه این کاربر (تعیین شده توسط مدیر)
   status: 'ACTIVE' | 'SUSPENDED';
+  profileCompleted?: boolean;
+  isFirstLogin?: boolean;
 }
 
 export type FieldType = 'text' | 'number' | 'select' | 'boolean' | 'date' | 'price';

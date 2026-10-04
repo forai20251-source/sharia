@@ -278,7 +278,15 @@ export default function App() {
     if (updates.customMonthlyQuota !== undefined) {
       storageService.setUserCustomQuota(userId, updates.customMonthlyQuota || null);
     }
-    const updated = storageService.updateUser(userId, updates, currentUser || undefined);
+    const updated = storageService.updateUser(
+      userId,
+      {
+        ...updates,
+        profileCompleted: true,
+        isFirstLogin: false,
+      },
+      currentUser || undefined
+    );
     refreshData();
     if (updated && currentUser && currentUser.id === userId) {
       setCurrentUser(updated);
@@ -288,6 +296,8 @@ export default function App() {
   const handleLogout = () => {
     storageService.logout();
     setCurrentUser(null);
+    setIsEditProfileOpen(false);
+    setEditingProfileUser(null);
     refreshData();
   };
 
@@ -296,7 +306,39 @@ export default function App() {
     setCurrentUser(user);
     setLoginNotice('');
     refreshData();
+
+    // Check if user is logging in for the first time or needs profile completion
+    const isProfileIncomplete =
+      user.isFirstLogin === true ||
+      !user.profileCompleted ||
+      !user.displayName ||
+      user.displayName === user.username ||
+      !user.internalPhone ||
+      !user.mobilePhone;
+
+    if (isProfileIncomplete) {
+      setEditingProfileUser(user);
+      setIsEditProfileOpen(true);
+    }
   };
+
+  // Check if active user needs initial profile completion on session restore
+  useEffect(() => {
+    if (currentUser) {
+      const isProfileIncomplete =
+        currentUser.isFirstLogin === true ||
+        !currentUser.profileCompleted ||
+        !currentUser.displayName ||
+        currentUser.displayName === currentUser.username ||
+        !currentUser.internalPhone ||
+        !currentUser.mobilePhone;
+
+      if (isProfileIncomplete && !isEditProfileOpen) {
+        setEditingProfileUser(currentUser);
+        setIsEditProfileOpen(true);
+      }
+    }
+  }, [currentUser]);
 
   const handleAdminAuthSuccess = (authenticatedAdmin: User) => {
     if (!currentUser || authenticatedAdmin.id !== currentUser.id) {
@@ -693,7 +735,7 @@ export default function App() {
         />
       )}
 
-      {/* 6. Edit Profile Modal (Accessible by self or by admin for any user) */}
+      {/* 6. Edit Profile Modal (Accessible by self, first login, or by admin for any user) */}
       {isEditProfileOpen && editingProfileUser && (
         <EditProfileModal
           isOpen={isEditProfileOpen}
@@ -705,6 +747,16 @@ export default function App() {
           currentUser={currentUser}
           onSave={handleSaveUserProfile}
           categories={categories}
+          isFirstLogin={
+            editingProfileUser.id === currentUser?.id &&
+            (editingProfileUser.isFirstLogin === true ||
+              !editingProfileUser.profileCompleted ||
+              !editingProfileUser.internalPhone ||
+              !editingProfileUser.mobilePhone ||
+              !editingProfileUser.displayName ||
+              editingProfileUser.displayName === editingProfileUser.username)
+          }
+          onLogout={handleLogout}
         />
       )}
     </div>

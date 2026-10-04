@@ -12,9 +12,13 @@ import {
   CheckCircle2,
   Lock,
   Layers,
+  Sparkles,
+  AlertCircle,
+  LogOut,
 } from 'lucide-react';
 import { User as UserType, Category } from '../types';
 import { MALE_FACELESS_AVATARS, DEFAULT_MALE_AVATAR } from '../data/defaultAvatars';
+import { toEnglishDigits } from '../utils/jalali';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -23,6 +27,8 @@ interface EditProfileModalProps {
   currentUser: UserType | null;
   onSave: (userId: string, updates: Partial<UserType>) => void;
   categories: Category[];
+  isFirstLogin?: boolean;
+  onLogout?: () => void;
 }
 
 const PRESET_DEPARTMENTS = [
@@ -46,6 +52,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   currentUser,
   onSave,
   categories,
+  isFirstLogin,
+  onLogout,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,23 +123,24 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     e.preventDefault();
     const newErrors: { [key: string]: string } = {};
 
-    // 1. Full name is required
+    // 1. Full name is strictly required
     if (!displayName.trim()) {
       newErrors.displayName = 'نام و نام خانوادگی الزامی است.';
     }
 
-    // 2. Mobile phone is required
-    if (!mobilePhone.trim()) {
-      newErrors.mobilePhone = 'شماره تلفن همراه الزامی است.';
-    }
-
-    // 3. Organizational internal phone is required (mandatory per requirement)
-    if (!internalPhone.trim()) {
+    // 2. Organizational internal phone is strictly required
+    const cleanInternal = toEnglishDigits(internalPhone.trim());
+    if (!cleanInternal) {
       newErrors.internalPhone = 'شماره تلفن داخلی سازمانی الزامی است.';
     }
 
-    // Notice: Department is explicitly optional (no error check)
-    // Notice: Email is completely removed (no error check or storage)
+    // 3. Mobile phone is strictly required and validated
+    const cleanMobile = toEnglishDigits(mobilePhone.trim());
+    if (!cleanMobile) {
+      newErrors.mobilePhone = 'شماره تلفن همراه الزامی است.';
+    } else if (!/^09\d{9}$/.test(cleanMobile)) {
+      newErrors.mobilePhone = 'شماره موبایل باید با ۰۹ آغاز شده و ۱۱ رقمی باشد (مثال: ۰۹۱۲۳۴۵۶۷۸۹).';
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -149,6 +158,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       internalPhone: internalPhone.trim(),
       mobilePhone: mobilePhone.trim(),
       avatar,
+      profileCompleted: true,
+      isFirstLogin: false,
     };
 
     // Only admin can view and change active directory username, role, status, managed categories, and ad groups
@@ -171,21 +182,37 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6" dir="rtl">
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs" onClick={onClose} />
+      <div
+        className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
+        onClick={isFirstLogin ? undefined : onClose}
+      />
 
       {/* Modal Dialog */}
       <div className="relative bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-3xl shadow-2xl max-w-2xl w-full max-h-[92vh] flex flex-col z-10 animate-in fade-in zoom-in-95 duration-200 overflow-hidden border border-slate-100 dark:border-slate-800 transition-colors">
         {/* Header */}
         <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/80">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center shadow-sm">
-              <User className="w-5 h-5" />
+            <div
+              className={`w-10 h-10 rounded-2xl ${
+                isFirstLogin ? 'bg-amber-500' : 'bg-rose-600'
+              } text-white flex items-center justify-center shadow-sm`}
+            >
+              {isFirstLogin ? <Sparkles className="w-5 h-5" /> : <User className="w-5 h-5" />}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="font-extrabold text-base text-slate-900 dark:text-slate-100">
-                  {isSelf ? 'ویرایش پروفایل من' : `ویرایش پروفایل کاربر: ${targetUser.displayName}`}
+                  {isFirstLogin
+                    ? 'تکمیل اطلاعات اولیه پروفایل کاربری'
+                    : isSelf
+                    ? 'ویرایش پروفایل من'
+                    : `ویرایش پروفایل کاربر: ${targetUser.displayName}`}
                 </h2>
+                {isFirstLogin && (
+                  <span className="text-[10px] bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded-full font-bold">
+                    ورود نخستین بار
+                  </span>
+                )}
                 {!isSelf && isAdmin && (
                   <span className="text-[10px] bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded-full font-bold">
                     پنل مدیریت
@@ -193,24 +220,53 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {isSelf
+                {isFirstLogin
+                  ? 'همکار گرامی، لطفاً جهت فعال‌سازی حساب کاربری مشخصات زیر را تکمیل نمایید.'
+                  : isSelf
                   ? 'بروزرسانی مشخصات فردی و اطلاعات تماس سازمانی'
                   : 'مدیریت و اصلاح اطلاعات کاربر، سطح دسترسی و مشخصات پرسنلی'}
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {!isFirstLogin ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          ) : onLogout ? (
+            <button
+              type="button"
+              onClick={onLogout}
+              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 px-3 py-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              title="خروج از حساب"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>خروج</span>
+            </button>
+          ) : null}
         </div>
 
         {/* Scrollable Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto flex-1">
+          {/* First Login Informational Banner */}
+          {isFirstLogin && (
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-200 flex items-start gap-3 text-xs leading-relaxed animate-in fade-in">
+              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-extrabold text-sm text-amber-950 dark:text-amber-100">
+                  تکمیل مشخصات هویتی و شماره‌های تماس الزامی است
+                </span>
+                <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                  با توجه به اینکه شما برای نخستین بار به سامانه آگهی سازمانی وارد شده‌اید، تکمیل فیلدهای <span className="font-bold underline">نام و نام خانوادگی</span>، <span className="font-bold underline">شماره تلفن داخلی</span> و <span className="font-bold underline">شماره تلفن همراه</span> جهت تماس همکاران و ثبت آگهی‌ها الزامی می‌باشد.
+                </p>
+              </div>
+            </div>
+          )}
+
           {isSavedSuccess && (
             <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -542,19 +598,30 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
           {/* Form Actions */}
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition cursor-pointer"
-            >
-              انصراف
-            </button>
+            {!isFirstLogin ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition cursor-pointer"
+              >
+                انصراف
+              </button>
+            ) : onLogout ? (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>انصراف و خروج از حساب</span>
+              </button>
+            ) : null}
             <button
               type="submit"
               className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>ذخیره تغییرات پروفایل</span>
+              <span>{isFirstLogin ? 'تایید و تکمیل اطلاعات پروفایل' : 'ذخیره تغییرات پروفایل'}</span>
             </button>
           </div>
         </form>

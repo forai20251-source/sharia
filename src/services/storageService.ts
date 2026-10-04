@@ -1007,16 +1007,37 @@ class StorageService {
       if (data.success && data.user) {
         this.adConfig.isConnected = true;
         setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
-        const adUser: User = {
-          ...data.user,
-          avatar: data.user.avatar || DEFAULT_MALE_AVATAR,
-          lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
-          status: 'ACTIVE',
-        };
 
         const existingIdx = this.users.findIndex(
-          u => u.username.toLowerCase() === adUser.username.toLowerCase() || u.id === adUser.id
+          u => u.username.toLowerCase() === data.user.username.toLowerCase() || u.id === data.user.id
         );
+        const existingUser = existingIdx >= 0 ? this.users[existingIdx] : null;
+
+        // User is first-time if not existing, or profile is incomplete (missing name, internal phone or mobile)
+        const isProfileIncomplete =
+          !existingUser ||
+          existingUser.isFirstLogin === true ||
+          !existingUser.profileCompleted ||
+          !existingUser.internalPhone ||
+          !existingUser.mobilePhone ||
+          !existingUser.displayName ||
+          existingUser.displayName === existingUser.username;
+
+        const adUser: User = {
+          ...data.user,
+          avatar: existingUser?.avatar || data.user.avatar || DEFAULT_MALE_AVATAR,
+          displayName:
+            existingUser?.displayName && existingUser.displayName !== existingUser.username
+              ? existingUser.displayName
+              : (data.user.displayName && data.user.displayName !== cleanUser ? data.user.displayName : cleanUser),
+          department: existingUser?.department || data.user.department || 'پرسنل سازمان',
+          internalPhone: existingUser?.internalPhone || data.user.internalPhone || '',
+          mobilePhone: existingUser?.mobilePhone || data.user.mobilePhone || '',
+          lastLoginShamsi: formatJalaliDate(new Date(), 'with-time'),
+          status: 'ACTIVE',
+          isFirstLogin: isProfileIncomplete,
+          profileCompleted: !isProfileIncomplete,
+        };
 
         if (existingIdx >= 0) {
           this.users[existingIdx] = {
@@ -1032,7 +1053,9 @@ class StorageService {
 
         this.addAuditLog({
           action: 'LOGIN_AD',
-          details: `احراز هویت زنده اکتیو دایرکتوری برای کاربر "${adUser.displayName}" (${adUser.username})`,
+          details: `احراز هویت زنده اکتیو دایرکتوری برای کاربر "${adUser.displayName}" (${adUser.username})${
+            isProfileIncomplete ? ' (ورود نخستین بار - نیازمند تکمیل اطلاعات)' : ''
+          }`,
           status: 'SUCCESS',
           userId: adUser.id,
           userName: `${adUser.displayName} (${adUser.username})`,
