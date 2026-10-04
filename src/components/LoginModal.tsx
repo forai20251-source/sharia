@@ -51,18 +51,26 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         onSelectUser(res.user);
         onClose();
       } else {
-        // Sanitize error message to prevent leaking domain infrastructure details to regular users
         const rawMsg = res.message || '';
-        if (
+        const isWrongCreds =
+          res.code === 'INVALID_CREDENTIALS' ||
+          rawMsg.includes('صحیح نمی‌باشد') ||
+          rawMsg.includes('نامعتبر') ||
+          rawMsg.includes('اشتباه');
+
+        if (isWrongCreds) {
+          setErrorMsg('نام کاربری یا کلمه عبور وارد شده در اکتیو دایرکتوری صحیح نمی‌باشد.');
+        } else if (
+          res.code === 'AD_NOT_CONFIGURED' ||
+          res.code === 'AD_UNREACHABLE' ||
+          res.code === 'NETWORK_ERROR' ||
           rawMsg.includes('عدم برقراری ارتباط') ||
           rawMsg.includes('در دسترس نیست') ||
-          rawMsg.includes('تنظیم نشده است') ||
-          rawMsg.includes('پورت') ||
-          rawMsg.includes('IP')
+          rawMsg.includes('تنظیم نشده است')
         ) {
           setErrorMsg('سرویس احراز هویت در حال حاضر در دسترس نیست. لطفاً با مدیر سیستم تماس بگیرید.');
         } else {
-          setErrorMsg(rawMsg || 'نام کاربری یا کلمه عبور اشتباه است.');
+          setErrorMsg(rawMsg || 'نام کاربری یا کلمه عبور وارد شده صحیح نمی‌باشد.');
         }
       }
     } catch {

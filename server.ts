@@ -20,18 +20,46 @@ function cleanHost(rawHost: any): string {
   return cleaned;
 }
 
+// Persistent Active Directory configuration file on server disk
+const AD_CONFIG_FILE = path.resolve(__dirname, 'ad-config.json');
+
+function loadPersistedAdConfig(): any {
+  try {
+    if (fs.existsSync(AD_CONFIG_FILE)) {
+      const raw = fs.readFileSync(AD_CONFIG_FILE, 'utf-8');
+      const data = JSON.parse(raw);
+      if (data && typeof data === 'object') {
+        return data;
+      }
+    }
+  } catch (e) {
+    console.error('Error reading ad-config.json:', e);
+  }
+  return {};
+}
+
+function savePersistedAdConfig(cfg: any): void {
+  try {
+    fs.writeFileSync(AD_CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Error writing ad-config.json:', e);
+  }
+}
+
+const persistedAd = loadPersistedAdConfig();
+
 // Global server-side Active Directory configuration
 let serverAdConfig: any = {
-  serverHost: cleanHost(process.env.AD_HOST || ''),
-  port: Number(process.env.AD_PORT) || 389,
-  useSsl: process.env.AD_SSL === 'true',
-  baseDn: (process.env.AD_BASE_DN || '').trim(),
-  domainName: (process.env.AD_DOMAIN || '').trim(),
-  bindUserDn: (process.env.AD_BIND_USER || '').trim(),
-  bindPassword: (process.env.AD_BIND_PASSWORD || '').trim(),
-  userFilter: process.env.AD_USER_FILTER || '(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))',
-  groupAdminDn: (process.env.AD_GROUP_ADMIN || '').trim(),
-  groupManagerDn: (process.env.AD_GROUP_MANAGER || '').trim(),
+  serverHost: cleanHost(persistedAd.serverHost || process.env.AD_HOST || ''),
+  port: Number(persistedAd.port || process.env.AD_PORT) || 389,
+  useSsl: Boolean(persistedAd.useSsl ?? (process.env.AD_SSL === 'true')),
+  baseDn: (persistedAd.baseDn || process.env.AD_BASE_DN || '').trim(),
+  domainName: (persistedAd.domainName || process.env.AD_DOMAIN || '').trim(),
+  bindUserDn: (persistedAd.bindUserDn || process.env.AD_BIND_USER || '').trim(),
+  bindPassword: (persistedAd.bindPassword || process.env.AD_BIND_PASSWORD || '').trim(),
+  userFilter: persistedAd.userFilter || process.env.AD_USER_FILTER || '(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))',
+  groupAdminDn: (persistedAd.groupAdminDn || process.env.AD_GROUP_ADMIN || '').trim(),
+  groupManagerDn: (persistedAd.groupManagerDn || process.env.AD_GROUP_MANAGER || '').trim(),
   autoCreateUser: true,
 };
 
@@ -299,10 +327,25 @@ async function startServer() {
       return res.status(400).json({ success: false, message: 'لطفاً کلمه عبور را وارد نمایید.' });
     }
 
-    const effectiveConfig = {
+    // Safely construct effectiveConfig without letting empty client fields overwrite valid server settings
+    const effectiveConfig: any = {
       ...serverAdConfig,
-      ...(adConfig || {}),
     };
+    if (adConfig && typeof adConfig === 'object') {
+      if (adConfig.serverHost && typeof adConfig.serverHost === 'string' && adConfig.serverHost.trim()) {
+        effectiveConfig.serverHost = cleanHost(adConfig.serverHost);
+      }
+      if (adConfig.port) effectiveConfig.port = Number(adConfig.port);
+      if (adConfig.domainName && typeof adConfig.domainName === 'string' && adConfig.domainName.trim()) {
+        effectiveConfig.domainName = adConfig.domainName.trim();
+      }
+      if (adConfig.baseDn && typeof adConfig.baseDn === 'string' && adConfig.baseDn.trim()) {
+        effectiveConfig.baseDn = adConfig.baseDn.trim();
+      }
+      if (adConfig.useSsl !== undefined) {
+        effectiveConfig.useSsl = Boolean(adConfig.useSsl);
+      }
+    }
 
     const host = cleanHost(effectiveConfig.serverHost);
     const port = Number(effectiveConfig.port || 389);
@@ -338,7 +381,7 @@ async function startServer() {
       });
     }
 
-    // 2. Perform LDAP bind for this user
+    // 2. Perform LDAP bind for this user with multi-candidate principal formats
     try {
       const client = ldap.createClient({
         url: `${useSsl ? 'ldaps' : 'ldap'}://${host}:${port}`,
@@ -349,27 +392,33 @@ async function startServer() {
 
       client.on('error', () => {});
 
-      const userPrincipal = domainName ? `${domainName}\\${cleanUser}` : cleanUser;
+      // Build candidate principals to test (DOM\\user, user@domain, user)
+      const candidatePrincipals: string[] = [];
 
-      client.bind(userPrincipal, password, (bindErr) => {
-        if (bindErr) {
-          client.unbind(() => {});
-          const msg = bindErr.message || '';
-          const isInvalidCreds = msg.includes('49') || (bindErr as any).code === 49;
-          return res.json({
-            success: false,
-            code: isInvalidCreds ? 'INVALID_CREDENTIALS' : 'LDAP_AUTH_ERROR',
-            message: isInvalidCreds
-              ? `کلمه عبور یا نام کاربری وارد شده در اکتیو دایرکتوری (${userPrincipal}) نامعتبر است.`
-              : `خطا در احراز هویت با اکتیو دایرکتوری: ${msg}`,
-          });
+      if (username.includes('\\') || username.includes('@')) {
+        candidatePrincipals.push(username.trim());
+      }
+      if (domainName) {
+        candidatePrincipals.push(`${domainName}\\${cleanUser}`);
+      }
+      if (domainName && domainName.includes('.')) {
+        candidatePrincipals.push(`${cleanUser}@${domainName}`);
+      } else if (baseDn) {
+        const dcParts = (baseDn.match(/DC=([^,]+)/gi) || []).map((p: string) => p.replace(/DC=/i, ''));
+        if (dcParts.length > 0) {
+          candidatePrincipals.push(`${cleanUser}@${dcParts.join('.')}`);
         }
+      }
+      candidatePrincipals.push(cleanUser);
 
+      const uniquePrincipals = [...new Set(candidatePrincipals.filter(Boolean))];
+
+      const proceedWithAuthenticatedUser = () => {
         const fallbackUserObj = {
           id: `usr-ad-${cleanUser.toLowerCase()}`,
-          username: `${domainName}\\${cleanUser}`,
+          username: domainName ? `${domainName}\\${cleanUser}` : cleanUser,
           displayName: cleanUser,
-          email: `${cleanUser.toLowerCase()}@${domainName.toLowerCase()}.local`,
+          email: `${cleanUser.toLowerCase()}@${(domainName || 'corp').toLowerCase()}.local`,
           department: 'پرسنل سازمان',
           internalPhone: '',
           mobilePhone: '',
@@ -431,7 +480,7 @@ async function startServer() {
             const department = foundEntry.department || 'پرسنل سازمان';
             const internalPhone = foundEntry.telephoneNumber || foundEntry.ipPhone || '';
             const mobilePhone = foundEntry.mobile || '';
-            const email = foundEntry.mail || `${cleanUser.toLowerCase()}@${domainName.toLowerCase()}.local`;
+            const email = foundEntry.mail || `${cleanUser.toLowerCase()}@${(domainName || 'corp').toLowerCase()}.local`;
 
             let memberOf: string[] = [];
             if (Array.isArray(foundEntry.memberOf)) {
@@ -448,32 +497,21 @@ async function startServer() {
             let role: 'SUPER_ADMIN' | 'CATEGORY_MANAGER' | 'USER' = 'USER';
             const adminDn = (effectiveConfig.groupAdminDn || '').toLowerCase();
             const managerDn = (effectiveConfig.groupManagerDn || '').toLowerCase();
-            const memberOfLower = memberOf.map((m: string) => m.toLowerCase());
-            const groupNamesLower = groupNames.map((g: string) => g.toLowerCase());
 
-            if (
-              (adminDn && memberOfLower.some(g => g.includes(adminDn))) ||
-              groupNamesLower.includes('domain admins') ||
-              groupNamesLower.includes('enterprise admins') ||
-              groupNamesLower.includes('it_admins')
-            ) {
+            if (adminDn && memberOf.some(g => g.toLowerCase().includes(adminDn))) {
               role = 'SUPER_ADMIN';
-            } else if (
-              (managerDn && memberOfLower.some(g => g.includes(managerDn))) ||
-              groupNamesLower.includes('category_managers') ||
-              groupNamesLower.includes('app_moderators')
-            ) {
+            } else if (managerDn && memberOf.some(g => g.toLowerCase().includes(managerDn))) {
               role = 'CATEGORY_MANAGER';
             }
 
-            const realUser = {
+            const finalUser = {
               id: `usr-ad-${cleanUser.toLowerCase()}`,
-              username: `${domainName}\\${cleanUser}`,
+              username: domainName ? `${domainName}\\${cleanUser}` : cleanUser,
               displayName,
-              email,
               department,
               internalPhone,
               mobilePhone,
+              email,
               role,
               adGroups: groupNames.length > 0 ? groupNames : ['Domain Users'],
               status: 'ACTIVE' as const,
@@ -481,12 +519,47 @@ async function startServer() {
 
             return res.json({
               success: true,
-              user: realUser,
-              message: `احراز هویت با موفقیت در اکتیو دایرکتوری (${userPrincipal}) انجام شد.`,
+              user: finalUser,
+              message: 'ورود موفق به سامانه با اکتیو دایرکتوری ویندوز',
             });
           });
         });
-      });
+      };
+
+      const tryBindPrincipal = (idx: number) => {
+        if (idx >= uniquePrincipals.length) {
+          client.unbind(() => {});
+          return res.json({
+            success: false,
+            code: 'INVALID_CREDENTIALS',
+            message: 'کلمه عبور یا نام کاربری وارد شده در اکتیو دایرکتوری صحیح نمی‌باشد.',
+          });
+        }
+
+        const candidate = uniquePrincipals[idx];
+        client.bind(candidate, password, (bindErr) => {
+          if (bindErr) {
+            const msg = bindErr.message || '';
+            const isInvalidCreds = msg.includes('49') || (bindErr as any).code === 49;
+            // If creds error, try next candidate format (e.g. UPN vs NetBIOS)
+            if (isInvalidCreds && idx + 1 < uniquePrincipals.length) {
+              return tryBindPrincipal(idx + 1);
+            }
+            client.unbind(() => {});
+            return res.json({
+              success: false,
+              code: isInvalidCreds ? 'INVALID_CREDENTIALS' : 'LDAP_AUTH_ERROR',
+              message: isInvalidCreds
+                ? 'کلمه عبور یا نام کاربری وارد شده در اکتیو دایرکتوری صحیح نمی‌باشد.'
+                : `خطا در احراز هویت با اکتیو دایرکتوری: ${msg}`,
+            });
+          }
+
+          proceedWithAuthenticatedUser();
+        });
+      };
+
+      tryBindPrincipal(0);
     } catch (err: any) {
       return res.json({
         success: false,

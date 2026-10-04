@@ -95,6 +95,24 @@ class StorageService {
     // Never falsely claim AD is connected without live validation
     this.adConfig.isConnected = false;
     if (typeof window !== 'undefined') {
+      fetch(getApiUrl('/api/ad/config'))
+        .then(res => res.json())
+        .then(cfg => {
+          if (cfg && cfg.serverHost) {
+            this.adConfig = {
+              ...this.adConfig,
+              serverHost: cfg.serverHost,
+              port: cfg.port || 389,
+              domainName: cfg.domainName || this.adConfig.domainName,
+              baseDn: cfg.baseDn || this.adConfig.baseDn,
+              bindUserDn: cfg.bindUserDn || this.adConfig.bindUserDn,
+              useSsl: Boolean(cfg.useSsl),
+            };
+            setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
+          }
+        })
+        .catch(() => {});
+
       fetch(getApiUrl('/api/ad/status'))
         .then(res => res.json())
         .then(status => {
@@ -918,7 +936,7 @@ class StorageService {
   async login(
     usernameInput: string,
     passwordInput: string
-  ): Promise<{ success: boolean; user?: User; message: string; isAdmin?: boolean }> {
+  ): Promise<{ success: boolean; user?: User; message: string; code?: string; isAdmin?: boolean }> {
     const clean = usernameInput.trim().toLowerCase().replace(/^(corp\\|corp\/)/i, '');
     if (!clean) {
       return { success: false, message: 'لطفاً نام کاربری را وارد نمایید.' };
@@ -950,7 +968,7 @@ class StorageService {
         };
       }
       if (adminRes.error) {
-        return { success: false, message: adminRes.error };
+        return { success: false, message: adminRes.error, code: 'INVALID_CREDENTIALS' };
       }
     }
 
@@ -962,7 +980,7 @@ class StorageService {
     usernameInput: string,
     passwordInput: string,
     domainInput?: string
-  ): Promise<{ success: boolean; user?: User; message: string }> {
+  ): Promise<{ success: boolean; user?: User; message: string; code?: string }> {
     const domainName = (domainInput || this.adConfig.domainName || '').trim().toUpperCase();
     let cleanUser = usernameInput.trim();
     if (cleanUser.includes('\\')) {
@@ -1026,7 +1044,7 @@ class StorageService {
           body: JSON.stringify(adUser),
         }).catch(() => {});
 
-        return { success: true, user: adUser, message: data.message };
+        return { success: true, user: adUser, message: data.message, code: data.code };
       }
 
       // Case 2: Failed authentication or unreachable domain controller
@@ -1042,6 +1060,7 @@ class StorageService {
 
       return {
         success: false,
+        code: data.code,
         message: data.message || 'نام کاربری یا کلمه عبور در اکتیو دایرکتوری نامعتبر است.',
       };
     } catch (err: any) {
@@ -1050,6 +1069,7 @@ class StorageService {
 
       return {
         success: false,
+        code: 'NETWORK_ERROR',
         message: `خطای شبکه در ارتباط با سرور احراز هویت: ${err.message}`,
       };
     }
