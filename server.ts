@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import mysql from 'mysql2/promise';
 import net from 'net';
 import ldap from 'ldapjs';
+import { registerDatabaseRoutes } from './serverDatabase';
 
 dotenv.config();
 
@@ -1328,6 +1329,9 @@ async function startServer() {
       res.json({ success: false });
     }
   });
+
+  // Mount central enterprise Database Routes (full persistence without browser localStorage)
+  registerDatabaseRoutes(app, getDbPool);
 
   // Serve frontend in production or Vite in dev
   if (process.env.NODE_ENV !== 'production') {

@@ -365,4 +365,5 @@ export const INITIAL_AD_POSTING_POLICY: AdPostingPolicy = {
   minTitleLength: 6,
   maxTitleLength: 80,
   userCustomQuotas: {},
+  allowUserAdReporting: true,
 };

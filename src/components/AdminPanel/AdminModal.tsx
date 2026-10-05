@@ -56,6 +56,7 @@ import {
   Flame,
   AlertTriangle,
   SlidersHorizontal,
+  Flag,
 } from 'lucide-react';
 import {
   User,
@@ -68,6 +69,9 @@ import {
   FieldType,
   AdPostingPolicy,
   UserQuotaStatus,
+  AdReport,
+  AdReportReason,
+  ReportReasonConfig,
 } from '../../types';
 import { EditAdModal } from '../EditAdModal';
 import { toPersianDigits, formatPersianNumber, formatJalaliDate } from '../../utils/jalali';
@@ -163,12 +167,20 @@ interface AdminModalProps {
   adPolicy: AdPostingPolicy;
   onSaveAdPolicy: (policy: Partial<AdPostingPolicy>) => void;
   onSetUserCustomQuota: (userId: string, quota: number | null) => void;
+  adReports?: AdReport[];
+  onResolveAdReport?: (reportId: string, action: 'DISMISS' | 'REMOVE_AD' | 'RESOLVE', adminNote?: string) => void;
+  onDeleteAdReport?: (reportId: string) => void;
+  reportReasons?: ReportReasonConfig[];
+  onSaveReportReason?: (reason: ReportReasonConfig) => void;
+  onDeleteReportReason?: (reasonId: string) => void;
+  onToggleReportReason?: (reasonId: string, isActive: boolean) => void;
 }
 
 type AdminTab =
   | 'ANALYTICS'
   | 'USER_REPORT'
   | 'MODERATION'
+  | 'AD_VIOLATION_REPORTS'
   | 'CATEGORIES'
   | 'AD_POLICIES'
   | 'ACTIVE_DIRECTORY'
@@ -185,6 +197,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   auditLogs,
   userPerformanceReport,
   adPolicy,
+  adReports = [],
+  reportReasons = [],
   onClose,
   onApproveAd,
   onRejectAd,
@@ -204,6 +218,11 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onEditUserProfile,
   onSaveAdPolicy,
   onSetUserCustomQuota,
+  onResolveAdReport,
+  onDeleteAdReport,
+  onSaveReportReason,
+  onDeleteReportReason,
+  onToggleReportReason,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('ANALYTICS');
 
@@ -310,7 +329,115 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [bypassAdmins, setBypassAdmins] = useState(adPolicy.bypassForAdminsAndManagers);
   const [minTitleLen, setMinTitleLen] = useState(adPolicy.minTitleLength);
   const [maxTitleLen, setMaxTitleLen] = useState(adPolicy.maxTitleLength);
+  const [allowUserReporting, setAllowUserReporting] = useState(adPolicy.allowUserAdReporting ?? true);
   const [policySavedNotice, setPolicySavedNotice] = useState(false);
+
+  // Ad Reports State & Filters
+  const [reportFilterStatus, setReportFilterStatus] = useState<'ALL' | 'PENDING' | 'RESOLVED' | 'DISMISSED'>('ALL');
+  const [reportSearchQuery, setReportSearchQuery] = useState('');
+  const [reportActionModal, setReportActionModal] = useState<{
+    report: AdReport;
+    action: 'DISMISS' | 'REMOVE_AD' | 'RESOLVE';
+  } | null>(null);
+  const [reportAdminNoteInput, setReportAdminNoteInput] = useState('');
+  const [reportToDeleteId, setReportToDeleteId] = useState<string | null>(null);
+
+  // Ad Violation Reports Sub-View: 'REPORTS' (list) or 'REASONS' (manage reason options)
+  const [reportsSubView, setReportsSubView] = useState<'REPORTS' | 'REASONS'>('REPORTS');
+  const [editingReason, setEditingReason] = useState<ReportReasonConfig | null>(null);
+  const [isAddingReason, setIsAddingReason] = useState(false);
+  const [reasonToDelete, setReasonToDelete] = useState<ReportReasonConfig | null>(null);
+  const [reasonFormId, setReasonFormId] = useState('');
+  const [reasonFormLabel, setReasonFormLabel] = useState('');
+  const [reasonFormDescription, setReasonFormDescription] = useState('');
+  const [reasonFormIsActive, setReasonFormIsActive] = useState(true);
+  const [reasonFormOrder, setReasonFormOrder] = useState<number>(1);
+  const [reasonFormError, setReasonFormError] = useState('');
+  const [reasonFilterSearch, setReasonFilterSearch] = useState('');
+  const [reasonSuccessMsg, setReasonSuccessMsg] = useState('');
+
+  const handleOpenAddReason = () => {
+    setIsAddingReason(true);
+    setEditingReason(null);
+    setReasonFormId(`REASON_${Date.now().toString(36).toUpperCase()}`);
+    setReasonFormLabel('');
+    setReasonFormDescription('');
+    setReasonFormIsActive(true);
+    setReasonFormOrder(reportReasons.length + 1);
+    setReasonFormError('');
+  };
+
+  const handleOpenEditReason = (r: ReportReasonConfig) => {
+    setEditingReason(r);
+    setIsAddingReason(false);
+    setReasonFormId(r.id);
+    setReasonFormLabel(r.label);
+    setReasonFormDescription(r.description || '');
+    setReasonFormIsActive(r.isActive);
+    setReasonFormOrder(r.orderNum || 1);
+    setReasonFormError('');
+  };
+
+  const handleSaveReasonSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reasonFormLabel.trim()) {
+      setReasonFormError('لطفاً عنوان دلیل تخلف را وارد کنید.');
+      return;
+    }
+    const finalId = (reasonFormId.trim() || `REASON_${Date.now().toString(36).toUpperCase()}`).replace(/\s+/g, '_');
+    const newReason: ReportReasonConfig = {
+      id: finalId,
+      label: reasonFormLabel.trim(),
+      description: reasonFormDescription.trim(),
+      isActive: reasonFormIsActive,
+      orderNum: Number(reasonFormOrder) || 1,
+    };
+
+    if (onSaveReportReason) {
+      onSaveReportReason(newReason);
+    } else {
+      storageService.saveReportReason(newReason);
+    }
+
+    setIsAddingReason(false);
+    setEditingReason(null);
+    setReasonFormError('');
+    setReasonSuccessMsg(editingReason ? 'تغییرات گزینه دلیل گزارش با موفقیت در پایگاه داده ذخیره شد.' : 'گزینه جدید با موفقیت به پایگاه داده اضافه شد.');
+    setTimeout(() => setReasonSuccessMsg(''), 3500);
+  };
+
+  const handleConfirmDeleteReason = () => {
+    if (!reasonToDelete) return;
+    if (onDeleteReportReason) {
+      onDeleteReportReason(reasonToDelete.id);
+    } else {
+      storageService.deleteReportReason(reasonToDelete.id);
+    }
+    setReasonToDelete(null);
+    setReasonSuccessMsg('گزینه دلیل گزارش با موفقیت از پایگاه داده حذف گردید.');
+    setTimeout(() => setReasonSuccessMsg(''), 3500);
+  };
+
+  const handleToggleReasonActive = (id: string, currentStatus: boolean) => {
+    if (onToggleReportReason) {
+      onToggleReportReason(id, !currentStatus);
+    } else {
+      storageService.toggleReportReason(id, !currentStatus);
+    }
+  };
+
+  // Sync adPolicy state when props update
+  useEffect(() => {
+    setPolicyEnabled(adPolicy.enabled);
+    setMaxMonthlyAds(adPolicy.maxAdsPerSolarMonth);
+    setMaxActiveAds(adPolicy.maxActiveAdsPerUser);
+    setMaxUrgentBadges(adPolicy.maxUrgentBadgesPerMonth);
+    setCoolDownHours(adPolicy.coolDownHours);
+    setBypassAdmins(adPolicy.bypassForAdminsAndManagers);
+    setMinTitleLen(adPolicy.minTitleLength);
+    setMaxTitleLen(adPolicy.maxTitleLength);
+    setAllowUserReporting(adPolicy.allowUserAdReporting ?? true);
+  }, [adPolicy]);
 
   // User Custom Quota assignment state
   const [quotaTargetUserId, setQuotaTargetUserId] = useState<string>('');
@@ -552,6 +679,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       bypassForAdminsAndManagers: bypassAdmins,
       minTitleLength: Number(minTitleLen) || 3,
       maxTitleLength: Number(maxTitleLen) || 120,
+      allowUserAdReporting: allowUserReporting,
     });
     setPolicySavedNotice(true);
     setTimeout(() => setPolicySavedNotice(false), 3500);
@@ -666,6 +794,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const totalBadgeRequestsCount = relevantAdsForModerator.filter(
     a => a.badgeRequested || a.isUrgent
   ).length;
+
+  const pendingReportsCount = (adReports || []).filter(r => r.status === 'PENDING').length;
 
   const filteredModerationAds = ads.filter(a => {
     if (selectedModerationCategory !== 'ALL' && a.categoryId !== selectedModerationCategory) {
@@ -793,6 +923,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               >
                 <Flame className="w-2.5 h-2.5" />
                 <span>{toPersianDigits(pendingBadgeRequestsCount)}</span>
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('AD_VIOLATION_REPORTS')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap relative cursor-pointer ${
+              activeTab === 'AD_VIOLATION_REPORTS'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <Flag className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+            <span>گزارش‌های تخلف آگهی‌ها</span>
+            {pendingReportsCount > 0 && (
+              <span className="bg-rose-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold animate-pulse">
+                {toPersianDigits(pendingReportsCount)}
               </span>
             )}
           </button>
@@ -1428,6 +1576,608 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   })
                 )}
               </div>
+            </div>
+          )}
+
+          {/* TAB: AD VIOLATION REPORTS MODERATION */}
+          {activeTab === 'AD_VIOLATION_REPORTS' && (
+            <div className="space-y-6 animate-in fade-in duration-150">
+              {/* Header Box */}
+              <div className="p-5 bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-rose-900/40 shadow-sm">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Flag className="w-5 h-5 text-rose-400" />
+                    <span className="font-extrabold text-sm sm:text-base">
+                      رسیدگی به گزارش‌های تخلف آگهی‌ها (نظارت همگانی)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                    در این بخش می‌توانید گزارش‌های ثبت‌شده توسط پرسنل در خصوص آگهی‌های مغایر با شئون سازمانی، کلاهبرداری، اطلاعات اشتباه یا قیمت غیرواقعی را بررسی نموده و با حذف آگهی متخلف یا مختومه کردن گزارش اقدام نمایید.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs bg-rose-900/60 border border-rose-700/60 px-3 py-1.5 rounded-xl font-bold text-rose-200">
+                    {toPersianDigits(pendingReportsCount)} گزارش در انتظار بررسی
+                  </span>
+                </div>
+              </div>
+
+              {/* Sub-View Switcher: Reports List vs Reasons Configuration */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-2xs">
+                <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setReportsSubView('REPORTS')}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      reportsSubView === 'REPORTS'
+                        ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200/80 dark:border-slate-700'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Flag className="w-4 h-4" />
+                    <span>گزارش‌های تخلف دریافتی</span>
+                    <span className="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-extrabold">
+                      {toPersianDigits((adReports || []).length)}
+                    </span>
+                    {pendingReportsCount > 0 && (
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setReportsSubView('REASONS')}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      reportsSubView === 'REASONS'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs border border-slate-200/80 dark:border-slate-700'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <SlidersHorizontal className="w-4 h-4" />
+                    <span>مدیریت و ویرایش گزینه‌های علت گزارش</span>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
+                      {toPersianDigits(reportReasons.length)} گزینه
+                    </span>
+                  </button>
+                </div>
+
+                {reportsSubView === 'REASONS' && (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddReason}
+                    className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>افزودن گزینه جدید علت گزارش</span>
+                  </button>
+                )}
+              </div>
+
+              {/* VIEW 1: USER REPORTS MODERATION */}
+              {reportsSubView === 'REPORTS' && (
+                <div className="space-y-6">
+                  {/* Status Warning if reporting is disabled */}
+                  {!allowUserReporting && (
+                    <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl flex items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
+                      <div className="flex items-center gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>
+                          توجه: قابلیت ثبت گزارش تخلف توسط کاربران در تب <strong>«قوانین و سهمیه درج آگهی»</strong> در حال حاضر <strong>غیرفعال</strong> است.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('AD_POLICIES')}
+                        className="text-xs font-bold text-amber-800 dark:text-amber-300 underline hover:no-underline shrink-0 cursor-pointer"
+                      >
+                        تغییر تنظیمات قوانین
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Quick Metrics */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <div className="text-[11px] text-slate-500 font-bold">کل گزارش‌های دریافتی</div>
+                      <div className="text-xl font-extrabold text-slate-900 dark:text-white mt-1">
+                        {toPersianDigits((adReports || []).length)}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-amber-50/60 dark:bg-amber-950/30 rounded-2xl border border-amber-200 dark:border-amber-900/50 shadow-2xs">
+                      <div className="text-[11px] text-amber-800 dark:text-amber-300 font-bold">در انتظار بررسی</div>
+                      <div className="text-xl font-extrabold text-amber-700 dark:text-amber-400 mt-1 flex items-center gap-1.5">
+                        <span>{toPersianDigits(pendingReportsCount)}</span>
+                        {pendingReportsCount > 0 && (
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                        )}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 shadow-2xs">
+                      <div className="text-[11px] text-emerald-800 dark:text-emerald-300 font-bold">رسیدگی و مختومه شده</div>
+                      <div className="text-xl font-extrabold text-emerald-700 dark:text-emerald-400 mt-1">
+                        {toPersianDigits((adReports || []).filter(r => r.status === 'RESOLVED').length)}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-slate-100/60 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+                      <div className="text-[11px] text-slate-600 dark:text-slate-400 font-bold">رد شده (فاقد تخلف)</div>
+                      <div className="text-xl font-extrabold text-slate-700 dark:text-slate-300 mt-1">
+                        {toPersianDigits((adReports || []).filter(r => r.status === 'DISMISSED').length)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Filters and Search Bar */}
+                  <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800">
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                      <button
+                        type="button"
+                        onClick={() => setReportFilterStatus('ALL')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                          reportFilterStatus === 'ALL'
+                            ? 'bg-rose-600 text-white shadow-2xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        همه ({toPersianDigits((adReports || []).length)})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReportFilterStatus('PENDING')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                          reportFilterStatus === 'PENDING'
+                            ? 'bg-amber-600 text-white shadow-2xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        در انتظار بررسی ({toPersianDigits(pendingReportsCount)})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReportFilterStatus('RESOLVED')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                          reportFilterStatus === 'RESOLVED'
+                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        رسیدگی شده ({toPersianDigits((adReports || []).filter(r => r.status === 'RESOLVED').length)})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReportFilterStatus('DISMISSED')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                          reportFilterStatus === 'DISMISSED'
+                            ? 'bg-slate-700 text-white shadow-2xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        رد شده ({toPersianDigits((adReports || []).filter(r => r.status === 'DISMISSED').length)})
+                      </button>
+                    </div>
+
+                    <div className="relative min-w-[220px]">
+                      <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={reportSearchQuery}
+                        onChange={e => setReportSearchQuery(e.target.value)}
+                        placeholder="جستجو در عنوان، نام کاربر، دلیل..."
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pr-9 pl-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Reports List */}
+                  <div className="space-y-4">
+                    {(() => {
+                      const filtered = (adReports || []).filter(r => {
+                        if (reportFilterStatus !== 'ALL' && r.status !== reportFilterStatus) return false;
+                        if (reportSearchQuery.trim()) {
+                          const q = reportSearchQuery.trim().toLowerCase();
+                          const matchTitle = r.adTitle?.toLowerCase().includes(q);
+                          const matchReporter = r.reporterName?.toLowerCase().includes(q);
+                          const matchAuthor = r.authorName?.toLowerCase().includes(q);
+                          const matchReason = r.reasonLabel?.toLowerCase().includes(q);
+                          const matchDesc = r.description?.toLowerCase().includes(q);
+                          if (!matchTitle && !matchReporter && !matchAuthor && !matchReason && !matchDesc) return false;
+                        }
+                        return true;
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center">
+                              <CheckCircle className="w-6 h-6" />
+                            </div>
+                            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                              هیچ گزارش تخلفی با این فیلتر یافت نشد
+                            </h4>
+                            <p className="text-xs text-slate-500">
+                              {reportFilterStatus === 'PENDING'
+                                ? 'عالی است! در حال حاضر هیچ گزارش تخلفی در انتظار بررسی مدیران وجود ندارد.'
+                                : 'گزارش جدیدی مطابق معیارهای جستجو وجود ندارد.'}
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return filtered.map(report => {
+                        const targetAd = ads.find(a => a.id === report.adId);
+                        return (
+                          <div
+                            key={report.id}
+                            className={`p-5 rounded-2xl border transition shadow-2xs space-y-4 bg-white dark:bg-slate-900 ${
+                              report.status === 'PENDING'
+                                ? 'border-amber-300 dark:border-amber-800/80 ring-1 ring-amber-200/50'
+                                : report.status === 'RESOLVED'
+                                ? 'border-emerald-200 dark:border-emerald-900/60'
+                                : 'border-slate-200 dark:border-slate-800 opacity-80'
+                            }`}
+                          >
+                            {/* Top bar of card */}
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 flex items-center gap-1.5">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                                  <span>{report.reasonLabel}</span>
+                                </span>
+
+                                {report.status === 'PENDING' && (
+                                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                    در انتظار تصمیم مدیر
+                                  </span>
+                                )}
+                                {report.status === 'RESOLVED' && (
+                                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    بررسی و حل و فصل شده
+                                  </span>
+                                )}
+                                {report.status === 'DISMISSED' && (
+                                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                    رد گزارش (عدم احراز تخلف)
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-3 text-xs text-slate-500">
+                                <div className="flex items-center gap-1">
+                                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                  <span>ثبت شده: {report.createdAtShamsi}</span>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setReportToDeleteId(report.id)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 transition rounded-lg cursor-pointer"
+                                  title="حذف گزارش"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Content Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {/* Ad Info */}
+                              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl space-y-2 border border-slate-200/80 dark:border-slate-700/80 text-xs">
+                                <div className="font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                                  <span className="text-slate-500">آگهی مورد گزارش:</span>
+                                  {targetAd ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingAd(targetAd)}
+                                      className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <span>مشاهده / ویرایش آگهی</span>
+                                      <ExternalLink className="w-3 h-3" />
+                                    </button>
+                                  ) : (
+                                    <span className="text-[11px] text-rose-500 font-medium">
+                                      (آگهی از سامانه حذف شده است)
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-sm font-extrabold text-slate-900 dark:text-white">
+                                  {report.adTitle}
+                                </div>
+                                <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 text-[11px] pt-1">
+                                  <span>دسته: {report.adCategoryTitle || 'عمومی'}</span>
+                                  <span>ثبت‌کننده: {report.authorName}</span>
+                                </div>
+                              </div>
+
+                              {/* Reporter Info & Explanation */}
+                              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl space-y-2 border border-slate-200/80 dark:border-slate-700/80 text-xs">
+                                <div className="font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                                  <span className="text-slate-500">گزارش‌دهنده (همکار سازمانی):</span>
+                                  <span className="text-slate-800 dark:text-slate-200 font-bold">
+                                    {report.reporterName} {report.reporterDepartment ? `(${report.reporterDepartment})` : ''}
+                                  </span>
+                                </div>
+                                <div className="text-slate-700 dark:text-slate-300">
+                                  <span className="text-slate-500 text-[11px] block mb-0.5">توضیحات تکمیلی گزارش:</span>
+                                  <div className="p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 text-xs leading-relaxed text-slate-800 dark:text-slate-200">
+                                    {report.description || 'توضیحات متنی ثبت نشده است.'}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* If Resolved or Dismissed Details */}
+                            {(report.status === 'RESOLVED' || report.status === 'DISMISSED') && (
+                              <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-900/40 rounded-xl text-xs space-y-1">
+                                <div className="flex items-center justify-between text-slate-700 dark:text-slate-300 font-medium">
+                                  <span>رسیدگی شده توسط: <strong>{report.resolvedByName || 'مدیر سیستم'}</strong></span>
+                                  <span>تاریخ رسیدگی: {report.resolvedAtShamsi}</span>
+                                </div>
+                                {report.adminNote && (
+                                  <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                                    یادداشت مدیر: <span className="font-bold">{report.adminNote}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Action buttons */}
+                            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                              {targetAd && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReportActionModal({
+                                      report,
+                                      action: 'REMOVE_AD',
+                                    });
+                                    setReportAdminNoteInput('به دلیل تخلف از قوانین سامانه و مغایرت محتوا حذف شد.');
+                                  }}
+                                  className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <ShieldAlert className="w-3.5 h-3.5" />
+                                  <span>حذف آگهی متخلف و تایید گزارش</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReportActionModal({
+                                    report,
+                                    action: 'RESOLVE',
+                                  });
+                                  setReportAdminNoteInput('بررسی و حل و فصل گردید.');
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>تایید گزارش و بستن (بدون حذف)</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReportActionModal({
+                                    report,
+                                    action: 'DISMISS',
+                                  });
+                                  setReportAdminNoteInput('موردی از تخلف مشاهده نشد و آگهی معتبر است.');
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>رد گزارش (عدم احراز تخلف)</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* VIEW 2: DYNAMIC REPORT REASONS CRUD MANAGEMENT */}
+              {reportsSubView === 'REASONS' && (
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  {/* Database persistence banner */}
+                  <div className="p-4 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl flex items-start gap-3">
+                    <Database className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                    <div className="text-xs text-indigo-950 dark:text-indigo-200 space-y-1">
+                      <div className="font-bold text-sm">
+                        پیکربندی گزینه‌های علت گزارش در دیتابیس (بدون ذخیره‌سازی در localStorage)
+                      </div>
+                      <p className="text-indigo-800 dark:text-indigo-300 leading-relaxed">
+                        تمامی گزینه‌های علت گزارش تخلف به صورت مستقیم در <strong>پایگاه داده سرور</strong> ذخیره، ویرایش و حذف می‌شوند و هیچ داده‌ای در حافظه محلی (localStorage) مرورگر ثبت نمی‌گردد. مدیران سیستم می‌توانند گزینه‌های جدید اضافه کنند، عناوین و توضیحات را ویرایش نمایند و یا گزینه‌ها را فعال/غیرفعال یا حذف کنند.
+                      </p>
+                    </div>
+                  </div>
+
+                  {reasonSuccessMsg && (
+                    <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-xs font-bold text-emerald-800 dark:text-emerald-200 flex items-center gap-2 animate-in fade-in">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>{reasonSuccessMsg}</span>
+                    </div>
+                  )}
+
+                  {/* Summary Metric Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <div className="text-[11px] text-slate-500 font-bold">کل گزینه‌ها</div>
+                      <div className="text-xl font-extrabold text-slate-900 dark:text-white mt-1">
+                        {toPersianDigits(reportReasons.length)}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 shadow-2xs">
+                      <div className="text-[11px] text-emerald-800 dark:text-emerald-300 font-bold">گزینه‌های فعال در فرم گزارش</div>
+                      <div className="text-xl font-extrabold text-emerald-700 dark:text-emerald-400 mt-1">
+                        {toPersianDigits(reportReasons.filter(r => r.isActive).length)}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-amber-50/60 dark:bg-amber-950/30 rounded-2xl border border-amber-200 dark:border-amber-900/50 shadow-2xs">
+                      <div className="text-[11px] text-amber-800 dark:text-amber-300 font-bold">گزینه‌های غیرفعال (مخفی)</div>
+                      <div className="text-xl font-extrabold text-amber-700 dark:text-amber-400 mt-1">
+                        {toPersianDigits(reportReasons.filter(r => !r.isActive).length)}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-indigo-50/60 dark:bg-indigo-950/30 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 shadow-2xs">
+                      <div className="text-[11px] text-indigo-800 dark:text-indigo-300 font-bold">تعداد کل گزارش‌های ثبت‌شده</div>
+                      <div className="text-xl font-extrabold text-indigo-700 dark:text-indigo-400 mt-1">
+                        {toPersianDigits((adReports || []).length)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Filter & Search Bar */}
+                  <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800">
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={reasonFilterSearch}
+                        onChange={e => setReasonFilterSearch(e.target.value)}
+                        placeholder="جستجو در عنوان، شناسه یا توضیحات دلایل گزارش..."
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pr-9 pl-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenAddReason}
+                      className="flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs shrink-0 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>افزودن گزینه جدید علت گزارش</span>
+                    </button>
+                  </div>
+
+                  {/* Reasons Cards / List */}
+                  <div className="space-y-3">
+                    {(() => {
+                      const sortedReasons = [...reportReasons].sort((a, b) => (a.orderNum || 0) - (b.orderNum || 0));
+                      const filtered = sortedReasons.filter(r => {
+                        if (!reasonFilterSearch.trim()) return true;
+                        const q = reasonFilterSearch.toLowerCase();
+                        return (
+                          r.label.toLowerCase().includes(q) ||
+                          r.id.toLowerCase().includes(q) ||
+                          (r.description && r.description.toLowerCase().includes(q))
+                        );
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center">
+                              <AlertCircle className="w-6 h-6" />
+                            </div>
+                            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                              گزینه‌ای مطابق با جستجو یافت نشد
+                            </h4>
+                            <p className="text-xs text-slate-500">
+                              می‌توانید با کلیک بر روی دکمه «افزودن گزینه جدید»، دلیل تخلف مورد نظر خود را ایجاد نمایید.
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return filtered.map((reason, idx) => {
+                        const usageCount = (adReports || []).filter(rep => rep.reason === reason.id).length;
+
+                        return (
+                          <div
+                            key={reason.id}
+                            className={`p-4 rounded-2xl border transition shadow-2xs bg-white dark:bg-slate-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+                              reason.isActive
+                                ? 'border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-800'
+                                : 'border-slate-200 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-950/40 opacity-75'
+                            }`}
+                          >
+                            <div className="flex items-start gap-3.5 flex-1">
+                              <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-extrabold text-xs flex items-center justify-center shrink-0 border border-indigo-200/50 dark:border-indigo-800/50">
+                                {toPersianDigits(reason.orderNum || idx + 1)}
+                              </div>
+
+                              <div className="space-y-1 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                                    {reason.label}
+                                  </h4>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono">
+                                    {reason.id}
+                                  </span>
+                                  {reason.isActive ? (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                      فعال در فرم
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
+                                      غیرفعال
+                                    </span>
+                                  )}
+                                  {usageCount > 0 && (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50">
+                                      {toPersianDigits(usageCount)} بار گزارش شده
+                                    </span>
+                                  )}
+                                </div>
+
+                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                  {reason.description || 'توضیحات راهنما برای این گزینه ثبت نشده است.'}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleReasonActive(reason.id, reason.isActive)}
+                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+                                  reason.isActive
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+                                }`}
+                                title={reason.isActive ? 'کلیک کنید تا غیرفعال شود' : 'کلیک کنید تا فعال شود'}
+                              >
+                                {reason.isActive ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>فعال</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <X className="w-3.5 h-3.5" />
+                                    <span>غیرفعال</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditReason(reason)}
+                                className="p-2 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 transition cursor-pointer"
+                                title="ویرایش عنوان و مشخصات"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setReasonToDelete(reason)}
+                                className="p-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 border border-rose-200 dark:border-rose-800 transition cursor-pointer"
+                                title="حذف این گزینه از دیتابیس"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -2203,6 +2953,50 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       className="sr-only peer"
                     />
                     <div className="w-12 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* User Ad Violation Reporting Master Toggle */}
+              <div className={`p-4 rounded-2xl border transition-all ${
+                allowUserReporting
+                  ? 'bg-rose-50/80 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/80'
+                  : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                      allowUserReporting ? 'bg-rose-600 text-white' : 'bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}>
+                      <Flag className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                          امکان گزارش تخلف آگهی توسط کاربران (نظارت همگانی)
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          allowUserReporting
+                            ? 'bg-rose-200 dark:bg-rose-900 text-rose-800 dark:text-rose-200'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                        }`}>
+                          {allowUserReporting ? 'فعال (کاربران می‌توانند گزارش ثبت کنند)' : 'غیرفعال (امکان گزارش مسدود است)'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                        در صورت فعال بودن، کاربران در صفحه جزئیات آگهی گزینه «گزارش مشکل یا تخلف این آگهی» را خواهند دید و می‌توانند موارد مغایر با قوانین، کلاهبرداری یا فروخته شده را به مدیر گزارش دهند. با غیرفعال‌سازی، این قابلیت پنهان می‌شود.
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allowUserReporting}
+                      onChange={e => setAllowUserReporting(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-12 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
                   </label>
                 </div>
               </div>
@@ -3257,6 +4051,361 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>حذف قطعی</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report Action Prompt Modal */}
+      {reportActionModal && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4" dir="rtl">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            onClick={() => setReportActionModal(null)}
+          />
+          <div className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-md w-full p-6 z-10 space-y-4 border border-slate-100 dark:border-slate-800 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3">
+              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                reportActionModal.action === 'REMOVE_AD'
+                  ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                  : reportActionModal.action === 'RESOLVE'
+                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+              }`}>
+                {reportActionModal.action === 'REMOVE_AD' ? (
+                  <ShieldAlert className="w-5 h-5" />
+                ) : reportActionModal.action === 'RESOLVE' ? (
+                  <Check className="w-5 h-5" />
+                ) : (
+                  <X className="w-5 h-5" />
+                )}
+              </div>
+              <div>
+                <h4 className="font-extrabold text-base text-slate-900 dark:text-white">
+                  {reportActionModal.action === 'REMOVE_AD'
+                    ? 'حذف آگهی متخلف و اقدام انضباطی'
+                    : reportActionModal.action === 'RESOLVE'
+                    ? 'تایید و مختومه کردن گزارش'
+                    : 'رد گزارش تخلف'}
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  آگهی: {reportActionModal.report.adTitle}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <label className="font-bold text-slate-700 dark:text-slate-300 block">
+                یادداشت یا توضیحات مدیر (اختیاری):
+              </label>
+              <textarea
+                value={reportAdminNoteInput}
+                onChange={e => setReportAdminNoteInput(e.target.value)}
+                placeholder="علت تصمیم یا پیام مدیر برای بایگانی در لاگ سیستم..."
+                rows={3}
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-white outline-none resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setReportActionModal(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition cursor-pointer"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onResolveAdReport?.(
+                    reportActionModal.report.id,
+                    reportActionModal.action,
+                    reportAdminNoteInput.trim()
+                  );
+                  setReportActionModal(null);
+                  setReportAdminNoteInput('');
+                }}
+                className={`px-4 py-2 rounded-xl text-white font-bold text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer ${
+                  reportActionModal.action === 'REMOVE_AD'
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : reportActionModal.action === 'RESOLVE'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-slate-700 hover:bg-slate-800'
+                }`}
+              >
+                <span>ثبت و اعمال تصمیم</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report Delete Modal */}
+      {reportToDeleteId && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4" dir="rtl">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            onClick={() => setReportToDeleteId(null)}
+          />
+          <div className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-sm w-full p-6 z-10 space-y-4 border border-slate-100 dark:border-slate-800 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-base text-slate-900 dark:text-white">حذف رکورد گزارش</h4>
+                <p className="text-xs text-slate-500 mt-0.5">پاکسازی این رکورد از بایگانی</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              آیا از حذف این گزارش از بایگانی نظارتی اطمینان دارید؟
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setReportToDeleteId(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition cursor-pointer"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteAdReport?.(reportToDeleteId);
+                  setReportToDeleteId(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف گزارش</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Report Reason Modal */}
+      {(isAddingReason || editingReason) && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4" dir="rtl">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            onClick={() => {
+              setIsAddingReason(false);
+              setEditingReason(null);
+            }}
+          />
+          <div className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-lg w-full p-6 z-10 space-y-5 border border-slate-100 dark:border-slate-800 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-base text-slate-900 dark:text-white">
+                    {editingReason ? 'ویرایش گزینه علت گزارش' : 'افزودن گزینه جدید علت گزارش'}
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    ذخیره‌سازی مستقیم در پایگاه داده سرور (بدون وابستگی به localStorage)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddingReason(false);
+                  setEditingReason(null);
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {reasonFormError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs font-bold text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{reasonFormError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveReasonSubmit} className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800 dark:text-slate-200 block">
+                  عنوان دلیل گزارش <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={reasonFormLabel}
+                  onChange={e => setReasonFormLabel(e.target.value)}
+                  placeholder="مثال: نقض شئون اداری و سازمانی، قیمت‌گذاری غیرواقعی..."
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800 dark:text-slate-200 block">
+                  توضیحات راهنما برای کاربران هنگام ثبت گزارش:
+                </label>
+                <textarea
+                  value={reasonFormDescription}
+                  onChange={e => setReasonFormDescription(e.target.value)}
+                  placeholder="توضیح دهید کاربر چه زمانی باید این گزینه را انتخاب کند..."
+                  rows={3}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-white outline-none resize-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-800 dark:text-slate-200 block">
+                    شناسه سیستمی (انگلیسی):
+                  </label>
+                  <input
+                    type="text"
+                    value={reasonFormId}
+                    onChange={e => setReasonFormId(e.target.value)}
+                    placeholder="REASON_CODE"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-white outline-none"
+                    disabled={!!editingReason}
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    {editingReason ? 'شناسه پس از ایجاد قابل تغییر نیست.' : 'در صورت خالی ماندن به صورت خودکار تولید می‌شود.'}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-800 dark:text-slate-200 block">
+                    ترتیب نمایش در فرم (اولویت عددی):
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={reasonFormOrder}
+                    onChange={e => setReasonFormOrder(Number(e.target.value) || 1)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    اعداد کوچک‌تر بالاتر نمایش داده می‌شوند.
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Switch */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-xs text-slate-900 dark:text-white">وضعیت نمایش در فرم گزارش</div>
+                  <div className="text-[11px] text-slate-500">
+                    در صورت غیرفعال بودن، این گزینه در پنجره گزارش آگهی به کاربران نمایش داده نمی‌شود.
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={reasonFormIsActive}
+                    onChange={e => setReasonFormIsActive(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              {/* Live Preview Card */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] text-slate-500 font-bold block">
+                  پیش‌نمایش گزینه در فرم گزارش کاربران:
+                </span>
+                <div className="p-3 rounded-2xl border border-rose-300 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/20 text-xs">
+                  <div className="font-bold text-slate-900 dark:text-white">
+                    {reasonFormLabel.trim() || 'عنوان دلیل گزارش'}
+                  </div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    {reasonFormDescription.trim() || 'توضیحات راهنما برای کاربران'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddingReason(false);
+                    setEditingReason(null);
+                  }}
+                  className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition cursor-pointer"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>ذخیره در پایگاه داده</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Reason Confirmation Modal */}
+      {reasonToDelete && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4" dir="rtl">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            onClick={() => setReasonToDelete(null)}
+          />
+          <div className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-sm w-full p-6 z-10 space-y-4 border border-slate-100 dark:border-slate-800 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-base text-slate-900 dark:text-white">حذف گزینه دلیل گزارش</h4>
+                <p className="text-xs text-slate-500 mt-0.5">حذف دائمی از پایگاه داده</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              <p>
+                آیا از حذف گزینه <strong>«{reasonToDelete.label}»</strong> از فهرست دلایل گزارش در پایگاه داده اطمینان دارید؟
+              </p>
+
+              {(() => {
+                const count = (adReports || []).filter(r => r.reason === reasonToDelete.id).length;
+                if (count > 0) {
+                  return (
+                    <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-200">
+                      <strong>توجه:</strong> این گزینه در {toPersianDigits(count)} گزارش ثبت‌شده قبلی انتخاب شده است. پس از حذف، عنوان آن در گزارش‌های قبلی حفظ می‌شود اما کاربران جدید دیگر قادر به انتخاب آن نخواهند بود.
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setReasonToDelete(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs transition cursor-pointer"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteReason}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف از دیتابیس</span>
               </button>
             </div>
           </div>

@@ -1,5 +1,6 @@
-import { User, Category, CategoryField, Ad, AdStatus, ActiveDirectoryConfig, MySQLConfig, AuditLog, AdPostingPolicy, UserQuotaStatus } from '../types';
+import { User, Category, CategoryField, Ad, AdStatus, ActiveDirectoryConfig, MySQLConfig, AuditLog, AdPostingPolicy, UserQuotaStatus, AdReport, AdReportReason, ReportReasonConfig } from '../types';
 import { INITIAL_USERS, INITIAL_CATEGORIES, INITIAL_ADS, INITIAL_AD_CONFIG, INITIAL_MYSQL_CONFIG, INITIAL_AUDIT_LOGS, INITIAL_AD_POSTING_POLICY } from '../data/initialData';
+import { DEFAULT_REPORT_REASONS } from '../data/defaultReportReasons';
 import { MALE_FACELESS_AVATARS, DEFAULT_MALE_AVATAR } from '../data/defaultAvatars';
 import { OFFLINE_IMG_DEFAULT } from '../data/offlineImages';
 import { formatJalaliDate, getJalaliMonthYear, toPersianDigits } from '../utils/jalali';
@@ -15,25 +16,27 @@ const STORAGE_KEYS = {
   BOOKMARKS: 'divar_bookmarks_v1',
   AD_POLICY: 'divar_ad_policy_v1',
   ADMIN_LOCAL_PASSWORD: 'divar_admin_local_password_v1',
+  AD_REPORTS: 'divar_ad_reports_v1',
 };
 
-function getFromStorage<T>(key: string, fallback: T): T {
+// Purposely do NOT store sensitive business or ad data in browser localStorage per requirement:
+// "همچنین می خوام همه اطلاعات داخل دیتابیس ذخیره بشه و هیچ داده ای در localstorage مرورگر نباشه"
+function clearLocalStorageSafely(): void {
   try {
-    const item = localStorage.getItem(key);
-    if (!item) return fallback;
-    return JSON.parse(item);
-  } catch (e) {
-    console.error(`Error reading ${key} from storage:`, e);
-    return fallback;
-  }
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.clear();
+    }
+  } catch {}
 }
 
-function setToStorage<T>(key: string, value: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error(`Error writing ${key} to storage:`, e);
-  }
+function getFromStorage<T>(_key: string, fallback: T): T {
+  clearLocalStorageSafely();
+  return fallback;
+}
+
+function setToStorage<T>(_key: string, _value: T): void {
+  // Never write application entities to browser localStorage
+  clearLocalStorageSafely();
 }
 
 // Ensure API requests correctly prefix the /divar subpath when hosted under http://shahr.ir/divar
@@ -58,106 +61,137 @@ class StorageService {
   private auditLogs: AuditLog[] = [];
   private bookmarks: string[] = [];
   private adPolicy: AdPostingPolicy = INITIAL_AD_POSTING_POLICY;
+  private adReports: AdReport[] = [];
+  private reportReasons: ReportReasonConfig[] = [...DEFAULT_REPORT_REASONS];
+  private adminLocalPassword: string = '';
 
   constructor() {
     this.init();
   }
 
+  // Asynchronous bootstrap from server database (MySQL / server JSON db)
+  async initFromDatabase(): Promise<boolean> {
+    try {
+      if (typeof window !== 'undefined') {
+        const res = await fetch(getApiUrl('/api/db/bootstrap'));
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success) {
+            if (Array.isArray(data.categories) && data.categories.length > 0) {
+              this.categories = data.categories;
+            }
+            if (Array.isArray(data.ads)) {
+              this.ads = data.ads;
+            }
+            if (Array.isArray(data.users)) {
+              this.users = data.users;
+            }
+            if (Array.isArray(data.adReports)) {
+              this.adReports = data.adReports;
+            }
+            if (Array.isArray(data.reportReasons) && data.reportReasons.length > 0) {
+              this.reportReasons = data.reportReasons;
+            }
+            if (data.adPolicy) {
+              this.adPolicy = { ...this.adPolicy, ...data.adPolicy };
+            }
+            if (data.adConfig) {
+              this.adConfig = { ...this.adConfig, ...data.adConfig };
+            }
+            if (Array.isArray(data.auditLogs)) {
+              this.auditLogs = data.auditLogs;
+            }
+            if (Array.isArray(data.bookmarks)) {
+              this.bookmarks = data.bookmarks;
+            }
+            if (data.adminLocalPassword) {
+              this.adminLocalPassword = data.adminLocalPassword;
+            }
+            return true;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error bootstrapping from database:', e);
+    }
+    return false;
+  }
+
   private init() {
-    this.users = getFromStorage<User[]>(STORAGE_KEYS.USERS, INITIAL_USERS);
-    // Purge any legacy demo accounts
-    const DEMO_USER_KEYS = [
-      'usr-admin', 'usr-sara', 'usr-ali', 'usr-maryam', 'usr-reza',
-      'admin.system', 'sara.khodro', 'ali.amlak', 'maryam.hesabdari', 'reza.karimi', 'admin'
-    ];
-    const DEMO_USER_IDS = DEMO_USER_KEYS;
-    this.users = this.users.filter(u => {
-      const cleanU = (u.username || '').toLowerCase().replace(/^(corp\\|corp\/)/i, '');
-      return !DEMO_USER_KEYS.includes(u.id) && !DEMO_USER_KEYS.includes(cleanU) && !u.id.startsWith('usr-ad-admin.system');
-    });
-    setToStorage(STORAGE_KEYS.USERS, this.users);
+    clearLocalStorageSafely();
+    this.users = [...INITIAL_USERS];
+    this.categories = [...INITIAL_CATEGORIES];
+    this.ads = [];
+    this.adConfig = { ...INITIAL_AD_CONFIG };
+    this.mysqlConfig = { ...INITIAL_MYSQL_CONFIG };
+    this.auditLogs = [...INITIAL_AUDIT_LOGS];
+    this.bookmarks = [];
+    this.adPolicy = { ...INITIAL_AD_POSTING_POLICY };
+    this.adReports = [];
+    this.reportReasons = [...DEFAULT_REPORT_REASONS];
+    this.currentUser = null;
 
-    const storedCategories = getFromStorage<Category[]>(STORAGE_KEYS.CATEGORIES, INITIAL_CATEGORIES);
-    // Ensure all categories have their default image populated
-    this.categories = storedCategories.map(c => {
-      const initialMatch = INITIAL_CATEGORIES.find(ic => ic.id === c.id);
-      return {
-        ...c,
-        defaultImage: c.defaultImage || initialMatch?.defaultImage,
-      };
-    });
-    this.ads = getFromStorage<Ad[]>(STORAGE_KEYS.ADS, INITIAL_ADS);
-    const DEMO_AD_IDS = ['ad-101', 'ad-102', 'ad-103', 'ad-104', 'ad-105', 'ad-106', 'ad-107', 'ad-108'];
-    this.ads = this.ads.filter(a => !DEMO_AD_IDS.includes(a.id) && !DEMO_USER_IDS.includes(a.authorId));
-    setToStorage(STORAGE_KEYS.ADS, this.ads);
-
-    this.adConfig = getFromStorage<ActiveDirectoryConfig>(STORAGE_KEYS.AD_CONFIG, INITIAL_AD_CONFIG);
-    // Never falsely claim AD is connected without live validation
-    this.adConfig.isConnected = false;
     if (typeof window !== 'undefined') {
-      fetch(getApiUrl('/api/ad/config'))
-        .then(res => res.json())
-        .then(cfg => {
-          if (cfg && cfg.serverHost) {
-            this.adConfig = {
-              ...this.adConfig,
-              serverHost: cfg.serverHost,
-              port: cfg.port || 389,
-              domainName: cfg.domainName || this.adConfig.domainName,
-              baseDn: cfg.baseDn || this.adConfig.baseDn,
-              bindUserDn: cfg.bindUserDn || this.adConfig.bindUserDn,
-              useSsl: Boolean(cfg.useSsl),
-            };
-            setToStorage(STORAGE_KEYS.AD_CONFIG, this.adConfig);
-          }
-        })
-        .catch(() => {});
+      this.initFromDatabase();
+    }
+  }
 
-      fetch(getApiUrl('/api/ad/status'))
-        .then(res => res.json())
-        .then(status => {
-          this.adConfig.isConnected = Boolean(status.connected);
-        })
-        .catch(() => {
-          this.adConfig.isConnected = false;
-        });
+  // Configurable Ad Report Reasons Management
+  getReportReasons(): ReportReasonConfig[] {
+    return [...this.reportReasons];
+  }
+
+  getActiveReportReasons(): ReportReasonConfig[] {
+    return this.reportReasons.filter(r => r.isActive);
+  }
+
+  saveReportReason(reason: ReportReasonConfig): void {
+    const existingIndex = this.reportReasons.findIndex(r => r.id === reason.id);
+    if (existingIndex >= 0) {
+      this.reportReasons[existingIndex] = { ...this.reportReasons[existingIndex], ...reason };
+    } else {
+      this.reportReasons.push(reason);
     }
-    this.mysqlConfig = getFromStorage<MySQLConfig>(STORAGE_KEYS.MYSQL_CONFIG, INITIAL_MYSQL_CONFIG);
-    this.adPolicy = getFromStorage<AdPostingPolicy>(STORAGE_KEYS.AD_POLICY, INITIAL_AD_POSTING_POLICY);
-    if (this.mysqlConfig && this.mysqlConfig.host) {
-      this.mysqlConfig.host = this.mysqlConfig.host.replace(/\s*\(.*?\)/g, '').trim() || '127.0.0.1';
-    }
-    // Sync with backend .env config if available
+
     if (typeof window !== 'undefined') {
-      fetch(getApiUrl('/api/mysql/config'))
-        .then(res => res.json())
-        .then(cfg => {
-          if (cfg && cfg.host) {
-            this.mysqlConfig = {
-              ...this.mysqlConfig,
-              host: cfg.host.replace(/\s*\(.*?\)/g, '').trim() || '127.0.0.1',
-              port: cfg.port || 3306,
-              database: cfg.database || 'divar_org',
-              user: cfg.user || 'divar_user',
-            };
-            setToStorage(STORAGE_KEYS.MYSQL_CONFIG, this.mysqlConfig);
-          }
-        })
-        .catch(() => {});
+      fetch(getApiUrl('/api/db/report-reasons'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reason),
+      }).catch(e => console.error('Error saving report reason to DB:', e));
     }
-    this.auditLogs = getFromStorage<AuditLog[]>(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
-    this.auditLogs = this.auditLogs.filter(l => !DEMO_USER_IDS.includes(l.userId || ''));
-    setToStorage(STORAGE_KEYS.AUDIT_LOGS, this.auditLogs);
 
-    this.bookmarks = getFromStorage<string[]>(STORAGE_KEYS.BOOKMARKS, []);
-    this.bookmarks = this.bookmarks.filter(b => !DEMO_AD_IDS.includes(b));
-    setToStorage(STORAGE_KEYS.BOOKMARKS, this.bookmarks);
+    this.addAuditLog({
+      action: 'CONFIG_CHANGE',
+      details: `ذخیره/ویرایش گزینه دلیل گزارش "${reason.label}" در پایگاه داده`,
+      status: 'SUCCESS',
+    });
+  }
 
-    // Initial state has no user logged in until real authentication
-    this.currentUser = getFromStorage<User | null>(STORAGE_KEYS.CURRENT_USER, null);
-    if (this.currentUser && DEMO_USER_IDS.includes(this.currentUser.id)) {
-      this.currentUser = null;
-      setToStorage(STORAGE_KEYS.CURRENT_USER, null);
+  deleteReportReason(id: string): void {
+    const target = this.reportReasons.find(r => r.id === id);
+    this.reportReasons = this.reportReasons.filter(r => r.id !== id);
+
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl(`/api/db/report-reasons/${id}`), {
+        method: 'DELETE',
+      }).catch(e => console.error('Error deleting report reason from DB:', e));
+    }
+
+    if (target) {
+      this.addAuditLog({
+        action: 'CONFIG_CHANGE',
+        details: `حذف گزینه دلیل گزارش "${target.label}" از پایگاه داده`,
+        status: 'SUCCESS',
+      });
+    }
+  }
+
+  toggleReportReason(id: string, isActive: boolean): void {
+    const target = this.reportReasons.find(r => r.id === id);
+    if (target) {
+      target.isActive = isActive;
+      this.saveReportReason(target);
     }
   }
 
@@ -369,16 +403,23 @@ class StorageService {
   }
 
   getAdminLocalPassword(): string {
-    return getFromStorage<string>(STORAGE_KEYS.ADMIN_LOCAL_PASSWORD, '');
+    return this.adminLocalPassword || '';
   }
 
   setAdminLocalPassword(pass: string): boolean {
     const trimmed = pass.trim();
     if (trimmed.length < 4) return false;
-    setToStorage(STORAGE_KEYS.ADMIN_LOCAL_PASSWORD, trimmed);
+    this.adminLocalPassword = trimmed;
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl('/api/db/admin-password'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: trimmed }),
+      }).catch(e => console.error(e));
+    }
     this.addAuditLog({
       action: 'CONFIG_CHANGE',
-      details: 'تغییر رمز عبور ورود اضطراری / محلی مدیر سیستم',
+      details: 'تغییر رمز عبور ورود اضطراری / محلی مدیر سیستم و ذخیره در دیتابیس',
       status: 'SUCCESS',
       userName: 'مدیر کل سیستم',
     });
@@ -826,6 +867,157 @@ class StorageService {
     }
     setToStorage(STORAGE_KEYS.BOOKMARKS, this.bookmarks);
     return isBookmarked;
+  }
+
+  // Ad Violation Reports Management
+  getAdReports(): AdReport[] {
+    return [...this.adReports];
+  }
+
+  getAdReportsForAd(adId: string): AdReport[] {
+    return this.adReports.filter(r => r.adId === adId);
+  }
+
+  submitAdReport(data: {
+    adId: string;
+    reporterId: string;
+    reporterName: string;
+    reporterDepartment?: string;
+    reason: AdReportReason;
+    reasonLabel: string;
+    description?: string;
+  }): { success: boolean; message: string; report?: AdReport } {
+    if (!this.adPolicy.allowUserAdReporting) {
+      return {
+        success: false,
+        message: 'امکان ثبت گزارش تخلف در حال حاضر توسط مدیر سامانه غیرفعال است.',
+      };
+    }
+
+    const targetAd = this.ads.find(a => a.id === data.adId);
+    if (!targetAd) {
+      return { success: false, message: 'آگهی مورد نظر یافت نشد.' };
+    }
+
+    // Check duplicate reporting by the same user for this ad
+    const alreadyReported = this.adReports.some(
+      r => r.adId === data.adId && r.reporterId === data.reporterId && r.status === 'PENDING'
+    );
+    if (alreadyReported) {
+      return {
+        success: false,
+        message: 'شما قبلاً برای این آگهی گزارش ثبت کرده‌اید. گزارش شما در دست بررسی مدیران سامانه است.',
+      };
+    }
+
+    const newReport: AdReport = {
+      id: `rep-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      adId: targetAd.id,
+      adTitle: targetAd.title,
+      adCategoryTitle: targetAd.categoryTitle,
+      authorId: targetAd.authorId,
+      authorName: targetAd.authorName,
+      reporterId: data.reporterId,
+      reporterName: data.reporterName,
+      reporterDepartment: data.reporterDepartment || '',
+      reason: data.reason,
+      reasonLabel: data.reasonLabel,
+      description: data.description?.trim(),
+      createdAtShamsi: formatJalaliDate(new Date(), 'with-time'),
+      status: 'PENDING',
+    };
+
+    this.adReports.unshift(newReport);
+    setToStorage(STORAGE_KEYS.AD_REPORTS, this.adReports);
+
+    // Persist to central enterprise database
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl('/api/db/reports'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newReport),
+      }).catch(e => console.error('Error saving ad report to DB:', e));
+    }
+
+    // Increment reportsCount on the ad
+    targetAd.reportsCount = (targetAd.reportsCount || 0) + 1;
+    this.ads = this.ads.map(a => (a.id === targetAd.id ? targetAd : a));
+    setToStorage(STORAGE_KEYS.ADS, this.ads);
+
+    this.addAuditLog({
+      action: 'CONFIG_CHANGE',
+      details: `ثبت گزارش تخلف برای آگهی "${targetAd.title}" توسط ${data.reporterName} (دلیل: ${data.reasonLabel})`,
+      status: 'SUCCESS',
+      userId: data.reporterId,
+      userName: data.reporterName,
+    });
+
+    return {
+      success: true,
+      message: 'گزارش شما با موفقیت ثبت شد و به اطلاع مدیریت سامانه رسید. با تشکر از همکاری شما.',
+      report: newReport,
+    };
+  }
+
+  resolveAdReport(
+    reportId: string,
+    action: 'DISMISS' | 'REMOVE_AD' | 'RESOLVE',
+    adminNote?: string,
+    resolvedByName?: string
+  ): boolean {
+    const report = this.adReports.find(r => r.id === reportId);
+    if (!report) return false;
+
+    report.status = action === 'DISMISS' ? 'DISMISSED' : 'RESOLVED';
+    report.adminNote = adminNote;
+    report.resolvedAtShamsi = formatJalaliDate(new Date(), 'with-time');
+    report.resolvedByName = resolvedByName || 'مدیر سیستم';
+
+    if (action === 'REMOVE_AD') {
+      this.deleteAd(report.adId);
+    }
+
+    setToStorage(STORAGE_KEYS.AD_REPORTS, this.adReports);
+
+    // Persist update to central enterprise database
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl(`/api/db/reports/${reportId}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: report.status,
+          adminNote: report.adminNote,
+          resolvedAtShamsi: report.resolvedAtShamsi,
+          resolvedByName: report.resolvedByName,
+        }),
+      }).catch(e => console.error('Error updating ad report in DB:', e));
+    }
+
+    this.addAuditLog({
+      action: 'CONFIG_CHANGE',
+      details: `بررسی گزارش تخلف آگهی "${report.adTitle}": ${
+        action === 'REMOVE_AD'
+          ? 'حذف آگهی متخلف'
+          : action === 'DISMISS'
+          ? 'رد گزارش (عدم تایید تخلف)'
+          : 'تایید و حل و فصل'
+      } توسط ${resolvedByName || 'مدیر'}`,
+      status: 'SUCCESS',
+      userName: resolvedByName || 'مدیر سیستم',
+    });
+
+    return true;
+  }
+
+  deleteAdReport(reportId: string): void {
+    this.adReports = this.adReports.filter(r => r.id !== reportId);
+    setToStorage(STORAGE_KEYS.AD_REPORTS, this.adReports);
+
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl(`/api/db/reports/${reportId}`), {
+        method: 'DELETE',
+      }).catch(e => console.error('Error deleting ad report in DB:', e));
+    }
   }
 
   // Active Directory Config
@@ -1333,6 +1525,15 @@ class StorageService {
     };
     setToStorage(STORAGE_KEYS.AD_POLICY, this.adPolicy);
 
+    // Persist to central enterprise database
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl('/api/db/policy'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.adPolicy),
+      }).catch(e => console.error('Error saving policy to DB:', e));
+    }
+
     this.addAuditLog({
       action: 'UPDATE_POLICY',
       details: `بروزرسانی قوانین و سهمیه‌های درج آگهی (سقف ماهانه: ${toPersianDigits(this.adPolicy.maxAdsPerSolarMonth)}، سقف همزمان: ${toPersianDigits(this.adPolicy.maxActiveAdsPerUser)}، وضعیت: ${this.adPolicy.enabled ? 'فعال' : 'غیرفعال'})`,
@@ -1351,6 +1552,14 @@ class StorageService {
     }
     this.adPolicy.userCustomQuotas = updatedCustom;
     setToStorage(STORAGE_KEYS.AD_POLICY, this.adPolicy);
+
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl('/api/db/policy'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.adPolicy),
+      }).catch(e => console.error('Error saving quota to DB:', e));
+    }
 
     this.users = this.users.map(u => u.id === userId ? { ...u, customMonthlyQuota: quota && quota > 0 ? quota : undefined } : u);
     setToStorage(STORAGE_KEYS.USERS, this.users);

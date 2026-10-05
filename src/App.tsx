@@ -24,6 +24,8 @@ import {
   AuditLog,
   AdPostingPolicy,
   UserQuotaStatus,
+  AdReport,
+  ReportReasonConfig,
 } from './types';
 import { storageService } from './services/storageService';
 import { Navbar } from './components/Navbar';
@@ -35,6 +37,7 @@ import { LoginModal } from './components/LoginModal';
 import { AdminModal } from './components/AdminPanel/AdminModal';
 import { AdminAuthModal } from './components/AdminPanel/AdminAuthModal';
 import { EditProfileModal } from './components/EditProfileModal';
+import { ReportAdModal } from './components/ReportAdModal';
 import { toPersianDigits } from './utils/jalali';
 
 const INITIAL_FILTER_STATE: FilterState = {
@@ -60,12 +63,15 @@ export default function App() {
   const [mysqlConfig, setMysqlConfig] = useState<MySQLConfig>(storageService.getMySQLConfig());
   const [adPolicy, setAdPolicy] = useState<AdPostingPolicy>(storageService.getAdPostingPolicy());
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [adReports, setAdReports] = useState<AdReport[]>(storageService.getAdReports());
+  const [reportReasons, setReportReasons] = useState<ReportReasonConfig[]>(storageService.getReportReasons());
 
   // UI Control States
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTER_STATE);
   const [selectedBranch, setSelectedBranch] = useState<string>('همه واحدها و شعب');
   const [showOnlyBookmarks, setShowOnlyBookmarks] = useState<boolean>(false);
   const [activeAdDetail, setActiveAdDetail] = useState<Ad | null>(null);
+  const [reportingAd, setReportingAd] = useState<Ad | null>(null);
   const [isPostAdOpen, setIsPostAdOpen] = useState<boolean>(false);
   const [isLoginOpen, setIsLoginOpen] = useState<boolean>(false);
   const [loginNotice, setLoginNotice] = useState<string>('');
@@ -124,6 +130,42 @@ export default function App() {
     setMysqlConfig(storageService.getMySQLConfig());
     setAdPolicy(storageService.getAdPostingPolicy());
     setAuditLogs(storageService.getAuditLogs());
+    setAdReports(storageService.getAdReports());
+    setReportReasons(storageService.getReportReasons());
+  };
+
+  const handleSaveReportReason = (reason: ReportReasonConfig) => {
+    storageService.saveReportReason(reason);
+    refreshData();
+  };
+
+  const handleDeleteReportReason = (reasonId: string) => {
+    storageService.deleteReportReason(reasonId);
+    refreshData();
+  };
+
+  const handleToggleReportReason = (reasonId: string, isActive: boolean) => {
+    storageService.toggleReportReason(reasonId, isActive);
+    refreshData();
+  };
+
+  const handleResolveAdReport = (
+    reportId: string,
+    action: 'DISMISS' | 'REMOVE_AD' | 'RESOLVE',
+    adminNote?: string
+  ) => {
+    storageService.resolveAdReport(
+      reportId,
+      action,
+      adminNote,
+      currentUser?.displayName || currentUser?.username || 'مدیر سیستم'
+    );
+    refreshData();
+  };
+
+  const handleDeleteAdReport = (reportId: string) => {
+    storageService.deleteAdReport(reportId);
+    refreshData();
   };
 
   const handleSaveAdPolicy = (policy: Partial<AdPostingPolicy>) => {
@@ -657,6 +699,31 @@ export default function App() {
           onDeleteAd={handleDeleteAd}
           onUpdateAd={handleUpdateAd}
           onContactView={handleContactView}
+          onOpenReportAd={(ad) => setReportingAd(ad)}
+          allowUserAdReporting={adPolicy.allowUserAdReporting !== false}
+        />
+      )}
+
+      {/* 1.1 Report Ad Violation Modal */}
+      {reportingAd && (
+        <ReportAdModal
+          isOpen={!!reportingAd}
+          onClose={() => setReportingAd(null)}
+          ad={reportingAd}
+          currentUser={currentUser}
+          reportReasons={reportReasons}
+          onSubmitReport={(data) => {
+            const res = storageService.submitAdReport(data);
+            if (res.success) {
+              refreshData();
+            }
+            return res;
+          }}
+          onOpenLogin={() => {
+            setReportingAd(null);
+            setLoginNotice('جهت ثبت گزارش تخلف یا مشکل آگهی، لطفاً با نام کاربری سازمانی خود وارد شوید.');
+            setIsLoginOpen(true);
+          }}
         />
       )}
 
@@ -732,6 +799,13 @@ export default function App() {
           adPolicy={adPolicy}
           onSaveAdPolicy={handleSaveAdPolicy}
           onSetUserCustomQuota={handleSetUserCustomQuota}
+          adReports={adReports}
+          onResolveAdReport={handleResolveAdReport}
+          onDeleteAdReport={handleDeleteAdReport}
+          reportReasons={reportReasons}
+          onSaveReportReason={handleSaveReportReason}
+          onDeleteReportReason={handleDeleteReportReason}
+          onToggleReportReason={handleToggleReportReason}
         />
       )}
 

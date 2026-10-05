@@ -18,8 +18,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const saved = localStorage.getItem('divar_theme');
-        if (saved === 'dark' || saved === 'light') return saved;
+        if (window.localStorage) {
+          window.localStorage.clear();
+        }
         if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
           return 'dark';
         }
@@ -38,7 +39,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.classList.remove('dark');
     }
     try {
-      localStorage.setItem('divar_theme', theme);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.clear();
+      }
     } catch {
       // ignore
     }

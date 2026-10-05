@@ -9,6 +9,8 @@ import {
   Layers,
   Edit2,
   Flame,
+  Flag,
+  AlertTriangle,
 } from 'lucide-react';
 import { Ad, Category, User } from '../types';
 import { EditAdModal } from './EditAdModal';
@@ -33,6 +35,8 @@ interface AdDetailModalProps {
   onDeleteAd?: (id: string) => void;
   onUpdateAd?: (id: string, updates: Partial<Ad>) => void;
   onContactView?: (id: string) => void;
+  onOpenReportAd?: (ad: Ad) => void;
+  allowUserAdReporting?: boolean;
 }
 
 export const AdDetailModal: React.FC<AdDetailModalProps> = ({
@@ -48,6 +52,8 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   onDeleteAd,
   onUpdateAd,
   onContactView,
+  onOpenReportAd,
+  allowUserAdReporting = true,
 }) => {
   const [currentAd, setCurrentAd] = useState<Ad>(ad);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -115,17 +121,27 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(true)}
-                className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs"
+                className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
                 title="ویرایش مشخصات آگهی توسط مدیر"
               >
                 <Edit2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                 <span>ویرایش آگهی (مدیر)</span>
               </button>
             )}
+            {allowUserAdReporting && onOpenReportAd && (
+              <button
+                type="button"
+                onClick={() => onOpenReportAd(currentAd)}
+                className="p-2 rounded-xl transition text-rose-500 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                title="گزارش مشکل یا تخلف این آگهی"
+              >
+                <Flag className="w-4 h-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onToggleBookmark(currentAd.id)}
-              className={`p-2 rounded-xl transition ${
+              className={`p-2 rounded-xl transition cursor-pointer ${
                 isBookmarked ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
               title="نشان کردن"
@@ -300,6 +316,29 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
                 )}
               </div>
             </div>
+
+            {/* Report Ad Card */}
+            {allowUserAdReporting && onOpenReportAd && (
+              <div className="p-3.5 rounded-2xl border border-rose-100 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-rose-800 dark:text-rose-300">
+                    <Flag className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                    <span>مشکلی در این آگهی وجود دارد؟</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  در صورت مشاهده مغایرت محتوا، قیمت غیرواقعی، عدم پاسخگویی یا واگذاری کالا، به مدیریت سامانه اطلاع دهید.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onOpenReportAd(currentAd)}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-xs font-bold transition shadow-2xs cursor-pointer"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                  <span>ثبت گزارش تخلف یا مشکل این آگهی</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

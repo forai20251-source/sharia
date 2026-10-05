@@ -1,0 +1,220 @@
+{
+  "users": [],
+  "categories": [
+    {
+      "id": "cat-vehicles",
+      "title": "وسایل نقلیه و خودرو",
+      "slug": "vehicles",
+      "icon": "Car",
+      "description": "خرید و فروش خودروهای شخصی، اداری، سازمانی و قطعات یدکی",
+      "color": "from-blue-500 to-indigo-600",
+      "managerId": "",
+      "managerName": "تعیین نشده",
+      "managerDepartment": "",
+      "allowAutoApprove": false,
+      "defaultImage": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"600\" height=\"400\" viewBox=\"0 0 600 400\"><rect width=\"600\" height=\"400\" fill=\"%231e293b\"/><text x=\"300\" y=\"200\" font-family=\"sans-serif\" font-size=\"24\" fill=\"%2394a3b8\" text-anchor=\"middle\">خودرو و وسایل نقلیه</text></svg>",
+      "fields": [
+        {
+          "id": "f-v-model",
+          "categoryId": "cat-vehicles",
+          "name": "car_model",
+          "label": "مدل / سال ساخت",
+          "type": "text",
+          "required": true,
+          "placeholder": "مثال: ۱۴۰۱ یا ۲۰۲۲",
+          "showInCard": true,
+          "order": 1
+        },
+        {
+          "id": "f-v-mileage",
+          "categoryId": "cat-vehicles",
+          "name": "mileage",
+          "label": "کارکرد",
+          "type": "number",
+          "unit": "کیلومتر",
+          "required": true,
+          "placeholder": "مثال: ۴۵۰۰۰",
+          "showInCard": true,
+          "order": 2
+        },
+        {
+          "id": "f-v-gearbox",
+          "categoryId": "cat-vehicles",
+          "name": "gearbox",
+          "label": "نوع گیربکس",
+          "type": "select",
+          "options": [
+            "اتوماتیک",
+            "دستی"
+          ],
+          "required": true,
+          "showInCard": true,
+          "order": 3
+        }
+      ]
+    },
+    {
+      "id": "cat-real-estate",
+      "title": "املاک و مسکن سازمانی",
+      "slug": "real-estate",
+      "icon": "Home",
+      "description": "رهن، اجاره و فروش آپارتمان و ویلا برای همکاران",
+      "color": "from-emerald-500 to-teal-600",
+      "managerId": "",
+      "managerName": "تعیین نشده",
+      "managerDepartment": "",
+      "allowAutoApprove": false,
+      "defaultImage": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"600\" height=\"400\" viewBox=\"0 0 600 400\"><rect width=\"600\" height=\"400\" fill=\"%230f172a\"/><text x=\"300\" y=\"200\" font-family=\"sans-serif\" font-size=\"24\" fill=\"%2394a3b8\" text-anchor=\"middle\">املاک و مسکن</text></svg>",
+      "fields": [
+        {
+          "id": "f-re-area",
+          "categoryId": "cat-real-estate",
+          "name": "area_sqm",
+          "label": "متراژ (متر مربع)",
+          "type": "number",
+          "unit": "متر",
+          "required": true,
+          "placeholder": "مثال: ۹۵",
+          "showInCard": true,
+          "order": 1
+        },
+        {
+          "id": "f-re-rooms",
+          "categoryId": "cat-real-estate",
+          "name": "rooms",
+          "label": "تعداد اتاق",
+          "type": "select",
+          "options": [
+            "یک خوابه",
+            "دو خوابه",
+            "سه خوابه",
+            "چهار خوابه یا بیشتر"
+          ],
+          "required": true,
+          "showInCard": true,
+          "order": 2
+        }
+      ]
+    },
+    {
+      "id": "cat-digital",
+      "title": "کالای دیجیتال و الکترونیک",
+      "slug": "digital",
+      "icon": "Laptop",
+      "description": "لپ‌تاپ، تبلت، گوشی موبایل، مانیتور و تجهیزات شبکه",
+      "color": "from-amber-500 to-orange-600",
+      "managerId": "",
+      "managerName": "تعیین نشده",
+      "managerDepartment": "",
+      "allowAutoApprove": false,
+      "defaultImage": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"600\" height=\"400\" viewBox=\"0 0 600 400\"><rect width=\"600\" height=\"400\" fill=\"%231e293b\"/><text x=\"300\" y=\"200\" font-family=\"sans-serif\" font-size=\"24\" fill=\"%2394a3b8\" text-anchor=\"middle\">کالای دیجیتال</text></svg>",
+      "fields": [
+        {
+          "id": "f-d-brand",
+          "categoryId": "cat-digital",
+          "name": "brand",
+          "label": "برند / سازنده",
+          "type": "text",
+          "required": true,
+          "placeholder": "مثال: Apple، Asus، Dell، Samsung",
+          "showInCard": true,
+          "order": 1
+        },
+        {
+          "id": "f-d-condition",
+          "categoryId": "cat-digital",
+          "name": "condition",
+          "label": "وضعیت دستگاه",
+          "type": "select",
+          "options": [
+            "نو (آکبند)",
+            "در حد نو",
+            "کارکرده سالم"
+          ],
+          "required": true,
+          "showInCard": true,
+          "order": 2
+        }
+      ]
+    }
+  ],
+  "ads": [],
+  "adReports": [],
+  "reportReasons": [
+    {
+      "id": "INAPPROPRIATE_CONTENT",
+      "label": "محتوای نامناسب یا مغایر با شئون سازمانی",
+      "description": "تصاویر نامناسب، الفاظ غیراخلاقی، متن توهین‌آمیز یا مغایر با قوانین اداری",
+      "isActive": true,
+      "orderNum": 1
+    },
+    {
+      "id": "FRAUD_OR_SUSPICIOUS",
+      "label": "اطلاعات نادرست، فریبنده یا مشکوک",
+      "description": "عدم تطابق کالای واقعی با مشخصات درج شده، اطلاعات گمراه‌کننده یا ادعای کذب",
+      "isActive": true,
+      "orderNum": 2
+    },
+    {
+      "id": "WRONG_PRICE",
+      "label": "قیمت‌گذاری غیرواقعی یا نامتعارف",
+      "description": "قیمت‌های غیرمنطقی، صوری یا اعلام قیمت متفاوت در تماس نسبت به آگهی",
+      "isActive": true,
+      "orderNum": 3
+    },
+    {
+      "id": "SOLD_OR_UNAVAILABLE",
+      "label": "کالا فروخته شده یا واگذار گردیده است",
+      "description": "آگهی‌دهنده پاسخگو نیست یا کالا دیگر موجود نمی‌باشد",
+      "isActive": true,
+      "orderNum": 4
+    },
+    {
+      "id": "WRONG_CATEGORY",
+      "label": "دسته‌بندی یا مشخصات فنی اشتباه",
+      "description": "درج آگهی در گروه نامربوط یا ثبت مشخصات اشتباه برای کالا",
+      "isActive": true,
+      "orderNum": 5
+    },
+    {
+      "id": "DUPLICATE_SPAM",
+      "label": "آگهی تکراری یا اسپم",
+      "description": "ارسال مکرر یک آگهی یکسان یا محتوای تبلیغاتی نامربوط",
+      "isActive": true,
+      "orderNum": 6
+    },
+    {
+      "id": "OTHER",
+      "label": "سایر موارد و تخلفات",
+      "description": "هرگونه مشکل دیگری که نیازمند بررسی و مداخله مدیران سامانه است",
+      "isActive": true,
+      "orderNum": 7
+    }
+  ],
+  "adPolicy": {
+    "enabled": true,
+    "maxAdsPerSolarMonth": 3,
+    "maxActiveAdsPerUser": 5,
+    "maxUrgentBadgesPerMonth": 2,
+    "coolDownHours": 0,
+    "bypassForAdminsAndManagers": true,
+    "minTitleLength": 3,
+    "maxTitleLength": 120,
+    "userCustomQuotas": {},
+    "allowUserAdReporting": true
+  },
+  "adConfig": {
+    "serverHost": "127.0.0.1",
+    "port": 389,
+    "domainName": "corp.local",
+    "baseDn": "DC=corp,DC=local",
+    "bindUserDn": "CN=Administrator,CN=Users,DC=corp,DC=local",
+    "groupAdminDn": "CN=DivarAdmins,CN=Users,DC=corp,DC=local",
+    "groupManagerDn": "CN=CategoryManagers,CN=Users,DC=corp,DC=local",
+    "useSsl": false,
+    "autoCreateUser": true
+  },
+  "auditLogs": [],
+  "bookmarks": [],
+  "adminLocalPassword": ""
+}

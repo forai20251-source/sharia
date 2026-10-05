@@ -162,6 +162,58 @@ CREATE TABLE IF NOT EXISTS \`ldap_settings\` (
   \`is_connected\` TINYINT(1) DEFAULT 1,
   \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_persian_ci;
+
+-- 9. جدول گزینه‌های علت گزارش تخلف آگهی (Configurable Ad Report Reasons)
+CREATE TABLE IF NOT EXISTS \`ad_report_reasons\` (
+  \`id\` VARCHAR(64) PRIMARY KEY,
+  \`label\` VARCHAR(191) NOT NULL,
+  \`description\` TEXT NOT NULL,
+  \`is_active\` TINYINT(1) DEFAULT 1,
+  \`order_num\` INT DEFAULT 0,
+  \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_persian_ci;
+
+-- 10. جدول گزارش‌های تخلف آگهی‌ها (Ad Violation Reports)
+CREATE TABLE IF NOT EXISTS \`ad_reports\` (
+  \`id\` VARCHAR(64) PRIMARY KEY,
+  \`ad_id\` VARCHAR(64) NOT NULL,
+  \`ad_title\` VARCHAR(255) NOT NULL,
+  \`ad_category_title\` VARCHAR(191) NULL,
+  \`author_id\` VARCHAR(64) NOT NULL,
+  \`author_name\` VARCHAR(191) NOT NULL,
+  \`reporter_id\` VARCHAR(64) NOT NULL,
+  \`reporter_name\` VARCHAR(191) NOT NULL,
+  \`reporter_department\` VARCHAR(191) NULL,
+  \`reason_id\` VARCHAR(64) NOT NULL,
+  \`reason_label\` VARCHAR(191) NOT NULL,
+  \`description\` TEXT NULL,
+  \`created_at_shamsi\` VARCHAR(64) NOT NULL,
+  \`status\` ENUM('PENDING', 'RESOLVED', 'DISMISSED') DEFAULT 'PENDING',
+  \`admin_note\` TEXT NULL,
+  \`resolved_at_shamsi\` VARCHAR(64) NULL,
+  \`resolved_by_name\` VARCHAR(191) NULL,
+  \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX \`idx_report_status\` (\`status\`),
+  INDEX \`idx_report_ad\` (\`ad_id\`),
+  INDEX \`idx_report_reporter\` (\`reporter_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_persian_ci;
+
+-- 11. جدول تنظیمات و قوانین سهمیه‌بندی درج آگهی (Ad Posting Policies)
+CREATE TABLE IF NOT EXISTS \`ad_policies\` (
+  \`id\` INT PRIMARY KEY DEFAULT 1,
+  \`enabled\` TINYINT(1) DEFAULT 1,
+  \`max_ads_per_solar_month\` INT DEFAULT 3,
+  \`max_active_ads_per_user\` INT DEFAULT 5,
+  \`max_urgent_badges_per_month\` INT DEFAULT 2,
+  \`cool_down_hours\` INT DEFAULT 0,
+  \`bypass_for_admins_and_managers\` TINYINT(1) DEFAULT 1,
+  \`min_title_length\` INT DEFAULT 3,
+  \`max_title_length\` INT DEFAULT 120,
+  \`allow_user_ad_reporting\` TINYINT(1) DEFAULT 1,
+  \`user_custom_quotas_json\` JSON NULL,
+  \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_persian_ci;
 `;
 
 export const NUXT_SERVER_CODE_GUIDE = `

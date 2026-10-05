@@ -82,6 +82,7 @@ export interface Ad {
   reviewedAt?: string;
   viewsCount: number;
   contactViewsCount: number;
+  reportsCount?: number;
   customFields: Record<string, string | number | boolean>; // Keyed by field id or name
 }
 
@@ -177,6 +178,38 @@ export interface AdPostingPolicy {
   maxTitleLength: number;
   // سهمیه‌های اختصاصی برای پرسنل خاص (شناسه کاربر -> سقف تعداد ماهانه)
   userCustomQuotas: Record<string, number>;
+  // امکان گزارش تخلف یا مشکل آگهی‌ها توسط کاربران
+  allowUserAdReporting: boolean;
+}
+
+export interface ReportReasonConfig {
+  id: string;
+  label: string;
+  description: string;
+  isActive: boolean;
+  orderNum: number;
+}
+
+export type AdReportReason = string;
+
+export interface AdReport {
+  id: string;
+  adId: string;
+  adTitle: string;
+  adCategoryTitle?: string;
+  authorId: string;
+  authorName: string;
+  reporterId: string;
+  reporterName: string;
+  reporterDepartment?: string;
+  reason: AdReportReason;
+  reasonLabel: string;
+  description?: string;
+  createdAtShamsi: string;
+  status: 'PENDING' | 'RESOLVED' | 'DISMISSED';
+  adminNote?: string;
+  resolvedAtShamsi?: string;
+  resolvedByName?: string;
 }
 
 // User's Real-time Quota and Restrictions Status
