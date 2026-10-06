@@ -1,6 +1,7 @@
 import { User, Category, CategoryField, Ad, AdStatus, ActiveDirectoryConfig, MySQLConfig, AuditLog, AdPostingPolicy, UserQuotaStatus, AdReport, AdReportReason, ReportReasonConfig } from '../types';
 import { INITIAL_USERS, INITIAL_CATEGORIES, INITIAL_ADS, INITIAL_AD_CONFIG, INITIAL_MYSQL_CONFIG, INITIAL_AUDIT_LOGS, INITIAL_AD_POSTING_POLICY } from '../data/initialData';
 import { DEFAULT_REPORT_REASONS } from '../data/defaultReportReasons';
+import { DEFAULT_UI_TEXTS, getDefaultTextsMap } from '../data/defaultUiTexts';
 import { MALE_FACELESS_AVATARS, DEFAULT_MALE_AVATAR } from '../data/defaultAvatars';
 import { OFFLINE_IMG_DEFAULT } from '../data/offlineImages';
 import { formatJalaliDate, getJalaliMonthYear, toPersianDigits } from '../utils/jalali';
@@ -64,6 +65,7 @@ class StorageService {
   private adReports: AdReport[] = [];
   private reportReasons: ReportReasonConfig[] = [...DEFAULT_REPORT_REASONS];
   private adminLocalPassword: string = '';
+  private uiTexts: Record<string, string> = { ...getDefaultTextsMap() };
 
   constructor() {
     this.init();
@@ -83,14 +85,22 @@ class StorageService {
             if (Array.isArray(data.ads)) {
               this.ads = data.ads;
             }
-            if (Array.isArray(data.users)) {
-              this.users = data.users;
+            if (Array.isArray(data.users) && data.users.length > 0) {
+              const userMap = new Map(this.users.map(u => [u.id, u]));
+              for (const u of data.users) {
+                userMap.set(u.id, { ...userMap.get(u.id), ...u });
+              }
+              this.users = Array.from(userMap.values());
+              setToStorage(STORAGE_KEYS.USERS, this.users);
             }
             if (Array.isArray(data.adReports)) {
               this.adReports = data.adReports;
             }
             if (Array.isArray(data.reportReasons) && data.reportReasons.length > 0) {
               this.reportReasons = data.reportReasons;
+            }
+            if (data.uiTexts && typeof data.uiTexts === 'object') {
+              this.uiTexts = { ...getDefaultTextsMap(), ...data.uiTexts };
             }
             if (data.adPolicy) {
               this.adPolicy = { ...this.adPolicy, ...data.adPolicy };
@@ -129,11 +139,91 @@ class StorageService {
     this.adPolicy = { ...INITIAL_AD_POSTING_POLICY };
     this.adReports = [];
     this.reportReasons = [...DEFAULT_REPORT_REASONS];
+    this.uiTexts = { ...getDefaultTextsMap() };
     this.currentUser = null;
 
     if (typeof window !== 'undefined') {
       this.initFromDatabase();
     }
+  }
+
+  // --- Dynamic UI Texts CMS Management (Database persistence, zero localStorage) ---
+  getUiTexts(): Record<string, string> {
+    return { ...this.uiTexts };
+  }
+
+  getUiText(key: string, fallback?: string): string {
+    return this.uiTexts[key] || fallback || key;
+  }
+
+  saveUiText(key: string, value: string): void {
+    this.uiTexts[key] = value;
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl('/api/db/ui-texts'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value }),
+      }).catch(e => console.error('Error saving UI text to DB:', e));
+    }
+
+    this.addAuditLog({
+      action: 'CONFIG_CHANGE',
+      details: `ویرایش متن سیستمی "${key}" به: "${value.slice(0, 50)}${value.length > 50 ? '...' : ''}"`,
+      status: 'SUCCESS',
+    });
+  }
+
+  saveBatchUiTexts(texts: Record<string, string>): void {
+    this.uiTexts = { ...this.uiTexts, ...texts };
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl('/api/db/ui-texts'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texts }),
+      }).catch(e => console.error('Error batch saving UI texts to DB:', e));
+    }
+
+    this.addAuditLog({
+      action: 'CONFIG_CHANGE',
+      details: `ذخیره دسته‌جمعی متون سفارشی سامانه در پایگاه داده`,
+      status: 'SUCCESS',
+    });
+  }
+
+  deleteUiText(key: string): void {
+    const defaultVal = getDefaultTextsMap()[key];
+    if (defaultVal) {
+      this.uiTexts[key] = defaultVal;
+    } else {
+      delete this.uiTexts[key];
+    }
+
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl(`/api/db/ui-texts/${encodeURIComponent(key)}`), {
+        method: 'DELETE',
+      }).catch(e => console.error('Error deleting UI text from DB:', e));
+    }
+
+    this.addAuditLog({
+      action: 'CONFIG_CHANGE',
+      details: `حذف سفارشی‌سازی متن "${key}" و بازگشت به حالت پیش‌فرض`,
+      status: 'SUCCESS',
+    });
+  }
+
+  resetUiTexts(): void {
+    this.uiTexts = { ...getDefaultTextsMap() };
+    if (typeof window !== 'undefined') {
+      fetch(getApiUrl('/api/db/ui-texts/reset'), {
+        method: 'POST',
+      }).catch(e => console.error('Error resetting UI texts in DB:', e));
+    }
+
+    this.addAuditLog({
+      action: 'CONFIG_CHANGE',
+      details: `بازنشانی کلیه متون سامانه به پیش‌فرض اولیه`,
+      status: 'WARNING',
+    });
   }
 
   // Configurable Ad Report Reasons Management
@@ -439,6 +529,8 @@ class StorageService {
     let saved: Category;
     const existingIndex = cat.id ? this.categories.findIndex(c => c.id === cat.id) : -1;
     const isNew = existingIndex === -1;
+    const oldCat = existingIndex >= 0 ? this.categories[existingIndex] : null;
+    const oldManagerId = oldCat?.managerId;
 
     if (!isNew) {
       saved = {
@@ -464,22 +556,97 @@ class StorageService {
       };
       this.categories.push(saved);
     }
+
+    // Synchronize Category Manager user record in Active Directory / local users
+    const newManagerId = saved.managerId;
+    if (newManagerId) {
+      const uIdx = this.users.findIndex(u => u.id === newManagerId);
+      if (uIdx >= 0) {
+        const mgrUser = this.users[uIdx];
+        const currentManaged = Array.isArray(mgrUser.managedCategoryIds) ? mgrUser.managedCategoryIds : [];
+        const updatedManaged = Array.from(new Set([...currentManaged, saved.id]));
+        const updatedRole = mgrUser.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'CATEGORY_MANAGER';
+        this.users[uIdx] = {
+          ...mgrUser,
+          role: updatedRole,
+          managedCategoryIds: updatedManaged,
+        };
+        // Update category's manager info from the actual user record
+        saved.managerName = mgrUser.displayName;
+        saved.managerDepartment = mgrUser.department;
+
+        // If current session is this user, update session as well
+        if (this.currentUser && this.currentUser.id === newManagerId) {
+          this.currentUser = this.users[uIdx];
+          setToStorage(STORAGE_KEYS.CURRENT_USER, this.currentUser);
+        }
+
+        // Sync updated user to server
+        if (typeof window !== 'undefined') {
+          fetch(getApiUrl('/api/db/users'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(this.users[uIdx]),
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // Cleanup old manager if manager changed
+    if (oldManagerId && oldManagerId !== newManagerId) {
+      const oldIdx = this.users.findIndex(u => u.id === oldManagerId);
+      if (oldIdx >= 0) {
+        const oldUser = this.users[oldIdx];
+        const remainingCats = this.categories.filter(c => c.id !== saved.id && c.managerId === oldManagerId);
+        const updatedManaged = (oldUser.managedCategoryIds || []).filter(cid => cid !== saved.id);
+        const updatedRole = oldUser.role === 'SUPER_ADMIN'
+          ? 'SUPER_ADMIN'
+          : (remainingCats.length > 0 ? 'CATEGORY_MANAGER' : 'USER');
+        this.users[oldIdx] = {
+          ...oldUser,
+          role: updatedRole,
+          managedCategoryIds: updatedManaged,
+        };
+
+        if (this.currentUser && this.currentUser.id === oldManagerId) {
+          this.currentUser = this.users[oldIdx];
+          setToStorage(STORAGE_KEYS.CURRENT_USER, this.currentUser);
+        }
+
+        if (typeof window !== 'undefined') {
+          fetch(getApiUrl('/api/db/users'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(this.users[oldIdx]),
+          }).catch(() => {});
+        }
+      }
+    }
+
+    setToStorage(STORAGE_KEYS.USERS, this.users);
     setToStorage(STORAGE_KEYS.CATEGORIES, this.categories);
     this.addAuditLog({
       action: isNew ? 'CREATE_CATEGORY' : 'UPDATE_CATEGORY',
       details: isNew
         ? `ایجاد دسته‌بندی جدید "${saved.title}" و انتساب مدیر "${saved.managerName}"`
-        : `بروزرسانی دسته‌بندی "${saved.title}" و انتساب مدیر`,
+        : `بروزرسانی دسته‌بندی "${saved.title}" و انتساب مدیر "${saved.managerName}"`,
       status: 'SUCCESS',
     });
 
-    // Sync to MySQL backend
+    // Sync to MySQL / server backend
     if (typeof window !== 'undefined') {
       fetch(getApiUrl('/api/categories'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(saved),
       }).catch(() => {});
+      if (saved.managerId) {
+        fetch(getApiUrl(`/api/categories/${saved.id}/manager`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ managerId: saved.managerId }),
+        }).catch(() => {});
+      }
     }
 
     return saved;
@@ -1124,6 +1291,49 @@ class StorageService {
     }
   }
 
+  // Sync users list from Active Directory server
+  async syncActiveDirectoryUsers(): Promise<{ success: boolean; users: User[]; message: string; count: number }> {
+    try {
+      const res = await fetch(getApiUrl('/api/ad/users'));
+      if (!res.ok) {
+        return { success: false, users: this.users, message: 'خطا در ارتباط با سرور دایرکتوری', count: 0 };
+      }
+      const data = await res.json();
+      if (data && Array.isArray(data.users) && data.users.length > 0) {
+        const userMap = new Map(this.users.map(u => [u.id, u]));
+        for (const u of data.users) {
+          const existing = userMap.get(u.id);
+          userMap.set(u.id, {
+            ...u,
+            ...existing,
+            username: u.username || existing?.username,
+            adGroups: u.adGroups || existing?.adGroups || [],
+            role: existing?.role || u.role,
+            managedCategoryIds: existing?.managedCategoryIds || u.managedCategoryIds || [],
+          });
+        }
+        this.users = Array.from(userMap.values());
+        setToStorage(STORAGE_KEYS.USERS, this.users);
+
+        this.addAuditLog({
+          action: 'CONFIG_CHANGE',
+          details: `همگام‌سازی موفق اطلاعات کاربران اکتیو دایرکتوری (${data.users.length} کاربر سازمانی)`,
+          status: 'SUCCESS',
+        });
+
+        return {
+          success: true,
+          users: this.users,
+          message: `${data.users.length} کاربر با موفقیت از اکتیو دایرکتوری همگام‌سازی شدند.`,
+          count: data.users.length,
+        };
+      }
+      return { success: true, users: this.users, message: 'اطلاعات کاربران با دایرکتوری همگام است.', count: this.users.length };
+    } catch (err: any) {
+      return { success: false, users: this.users, message: `خطا در همگام‌سازی: ${err.message}`, count: 0 };
+    }
+  }
+
   // Unified login supporting both emergency offline admin access and Active Directory
   async login(
     usernameInput: string,
@@ -1215,8 +1425,22 @@ class StorageService {
           !existingUser.displayName ||
           existingUser.displayName === existingUser.username;
 
+        const hasManagedCategories = this.categories.some(c => c.managerId === (existingUser?.id || data.user.id));
+        const effectiveRole =
+          existingUser?.role === 'SUPER_ADMIN' || data.user.role === 'SUPER_ADMIN'
+            ? 'SUPER_ADMIN'
+            : (existingUser?.role === 'CATEGORY_MANAGER' || data.user.role === 'CATEGORY_MANAGER' || hasManagedCategories)
+            ? 'CATEGORY_MANAGER'
+            : (data.user.role || 'USER');
+
+        const managedCatIds = existingUser?.managedCategoryIds && existingUser.managedCategoryIds.length > 0
+          ? existingUser.managedCategoryIds
+          : this.categories.filter(c => c.managerId === (existingUser?.id || data.user.id)).map(c => c.id);
+
         const adUser: User = {
           ...data.user,
+          role: effectiveRole,
+          managedCategoryIds: managedCatIds,
           avatar: existingUser?.avatar || data.user.avatar || DEFAULT_MALE_AVATAR,
           displayName:
             existingUser?.displayName && existingUser.displayName !== existingUser.username

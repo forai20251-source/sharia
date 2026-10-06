@@ -57,6 +57,8 @@ import {
   AlertTriangle,
   SlidersHorizontal,
   Flag,
+  Type,
+  UserCheck,
 } from 'lucide-react';
 import {
   User,
@@ -74,6 +76,7 @@ import {
   ReportReasonConfig,
 } from '../../types';
 import { EditAdModal } from '../EditAdModal';
+import { SystemTextsManager } from './SystemTextsManager';
 import { toPersianDigits, formatPersianNumber, formatJalaliDate } from '../../utils/jalali';
 import { MYSQL_SCHEMA_SQL, NUXT_SERVER_CODE_GUIDE } from '../../data/mysqlSchema';
 import { OFFLINE_PRESET_IMAGES, OFFLINE_IMG_DEFAULT } from '../../data/offlineImages';
@@ -185,7 +188,8 @@ type AdminTab =
   | 'AD_POLICIES'
   | 'ACTIVE_DIRECTORY'
   | 'MYSQL_LOCAL'
-  | 'AUDIT_LOGS';
+  | 'AUDIT_LOGS'
+  | 'SYSTEM_TEXTS';
 
 export const AdminModal: React.FC<AdminModalProps> = ({
   currentUser,
@@ -1013,6 +1017,19 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           >
             <FileText className="w-4 h-4" />
             <span>لاگ‌های امنیتی و نظارتی</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('SYSTEM_TEXTS')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'SYSTEM_TEXTS'
+                ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <Type className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+            <span>مدیریت متون سامانه (بدون هاردکد)</span>
           </button>
         </div>
 
@@ -3938,6 +3955,11 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 </div>
               </div>
             </div>
+          )}
+
+          {/* TAB 10: SYSTEM TEXTS CMS (Dynamic Non-Hardcoded Strings) */}
+          {activeTab === 'SYSTEM_TEXTS' && (
+            <SystemTextsManager />
           )}
         </div>
       </div>

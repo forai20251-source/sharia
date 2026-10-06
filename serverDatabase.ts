@@ -28,7 +28,226 @@ export interface ServerDatabaseState {
   auditLogs: any[];
   bookmarks: string[];
   adminLocalPassword: string;
+  uiTexts?: Record<string, string>;
 }
+
+export const DEFAULT_USERS = [
+  {
+    id: 'usr-ad-admin',
+    username: 'CORP\\admin',
+    displayName: 'مهندس علیرضا رضایی (مدیر ارشد زیرساخت IT)',
+    email: 'admin@corp.local',
+    department: 'فناوری اطلاعات و ارتباطات (ICT)',
+    internalPhone: '۱۰۱',
+    mobilePhone: '۰۹۱۲۱۱۱۰۰۰۱',
+    role: 'SUPER_ADMIN',
+    adGroups: ['Domain Admins', 'Enterprise Admins', 'IT_Support'],
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'امروز، ساعت ۰۸:۳۰',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-kazemi',
+    username: 'CORP\\m.kazemi',
+    displayName: 'محمد کاظمی (مدیر نقلیه و خودرو)',
+    email: 'm.kazemi@corp.local',
+    department: 'ترابری و پشتیبانی نقلیه',
+    internalPhone: '۲۰۵',
+    mobilePhone: '۰۹۱۲۲۲۲۰۰۰۲',
+    role: 'CATEGORY_MANAGER',
+    managedCategoryIds: ['cat-vehicles'],
+    adGroups: ['Domain Users', 'Transport_Managers'],
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'دیروز، ساعت ۱۶:۴۵',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-rahimi',
+    username: 'CORP\\s.rahimi',
+    displayName: 'سارا رحیمی (مدیر املاک و رفاهیات)',
+    email: 's.rahimi@corp.local',
+    department: 'امور رفاهی و منابع انسانی',
+    internalPhone: '۳۱۲',
+    mobilePhone: '۰۹۱۲۳۳۳۰۰۰۳',
+    role: 'CATEGORY_MANAGER',
+    managedCategoryIds: ['cat-real-estate'],
+    adGroups: ['Domain Users', 'HR_Managers'],
+    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'امروز، ساعت ۰۹:۱۵',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-ebrahimi',
+    username: 'CORP\\a.ebrahimi',
+    displayName: 'علی‌رضا ابراهیمی (مدیر تجهیزات دیجیتال)',
+    email: 'a.ebrahimi@corp.local',
+    department: 'فناوری اطلاعات و پشتیبانی شبکه',
+    internalPhone: '۱۰۸',
+    mobilePhone: '۰۹۱۲۴۴۴۰۰۰۴',
+    role: 'CATEGORY_MANAGER',
+    managedCategoryIds: ['cat-digital'],
+    adGroups: ['Domain Users', 'IT_Support'],
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'امروز، ساعت ۱۱:۰۰',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-hosseini',
+    username: 'CORP\\f.hosseini',
+    displayName: 'فاطمه حسینی (مدیر لوازم اداری و مصرفی)',
+    email: 'f.hosseini@corp.local',
+    department: 'تدارکات و انبار مرکزی',
+    internalPhone: '۴۲۱',
+    mobilePhone: '۰۹۱۲۵۵۵۰۰۰۵',
+    role: 'CATEGORY_MANAGER',
+    managedCategoryIds: ['cat-office'],
+    adGroups: ['Domain Users', 'Procurement_Team'],
+    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: '۲ روز پیش',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-mohammadi',
+    username: 'CORP\\h.mohammadi',
+    displayName: 'حسن محمدی (مدیر خدمات و تشریفات)',
+    email: 'h.mohammadi@corp.local',
+    department: 'خدمات عمومی و رفاهی',
+    internalPhone: '۵۰۲',
+    mobilePhone: '۰۹۱۲۶۶۶۰۰۰۶',
+    role: 'CATEGORY_MANAGER',
+    managedCategoryIds: ['cat-services'],
+    adGroups: ['Domain Users', 'Services_Team'],
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'امروز، ساعت ۱۰:۳۰',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-moradi',
+    username: 'CORP\\z.moradi',
+    displayName: 'زهرا مرادی (کارشناس ارشد گزینش و پرسنلی)',
+    email: 'z.moradi@corp.local',
+    department: 'منابع انسانی و آموزش',
+    internalPhone: '۳۱۵',
+    mobilePhone: '۰۹۱۲۷۷۷۰۰۰۷',
+    role: 'USER',
+    adGroups: ['Domain Users', 'HR_Staff'],
+    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: '۳ روز پیش',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-abbasi',
+    username: 'CORP\\k.abbasi',
+    displayName: 'کامران عباسی (رئیس اداره حسابداری)',
+    email: 'k.abbasi@corp.local',
+    department: 'امور مالی و حسابداری',
+    internalPhone: '۶۰۱',
+    mobilePhone: '۰۹۱۲۸۸۸۰۰۰۸',
+    role: 'USER',
+    adGroups: ['Domain Users', 'Finance_Staff'],
+    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'دیروز، ساعت ۱۴:۲۰',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-rostami',
+    username: 'CORP\\p.rostami',
+    displayName: 'پیمان رستمی (مسئول حراست و انتظامات)',
+    email: 'p.rostami@corp.local',
+    department: 'حراست و امنیت فیزیکی',
+    internalPhone: '۱۱۰',
+    mobilePhone: '۰۹۱۲۹۹۹۰۰۰۹',
+    role: 'USER',
+    adGroups: ['Domain Users', 'Security_Staff'],
+    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'امروز، ساعت ۰۷:۴۵',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-karimi',
+    username: 'CORP\\n.karimi',
+    displayName: 'نیلوفر کریمی (کارشناس بازرگانی و قراردادها)',
+    email: 'n.karimi@corp.local',
+    department: 'امور حقوقی و قراردادها',
+    internalPhone: '۷۰۴',
+    mobilePhone: '۰۹۱۹۱۱۱۰۰۱۰',
+    role: 'USER',
+    adGroups: ['Domain Users', 'Legal_Team'],
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'امروز، ساعت ۱۲:۱۰',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-taheri',
+    username: 'CORP\\s.taheri',
+    displayName: 'سعید طاهری (کارشناس روابط عمومی)',
+    email: 's.taheri@corp.local',
+    department: 'روابط عمومی و امور بین‌الملل',
+    internalPhone: '۸۰۲',
+    mobilePhone: '۰۹۱۹۲۲۲۰۰۱۱',
+    role: 'USER',
+    adGroups: ['Domain Users', 'PR_Staff'],
+    avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: '۴ روز پیش',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-safari',
+    username: 'CORP\\b.safari',
+    displayName: 'بهنام صفری (کارشناس بازرسی و نظارت)',
+    email: 'b.safari@corp.local',
+    department: 'بازرسی و رسیدگی به شکایات',
+    internalPhone: '۱۱۵',
+    mobilePhone: '۰۹۱۹۳۳۳۰۰۱۲',
+    role: 'USER',
+    adGroups: ['Domain Users', 'Inspection_Staff'],
+    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'امروز، ساعت ۰۸:۵۰',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-farhadi',
+    username: 'CORP\\m.farhadi',
+    displayName: 'مهدی فرهادی (کارشناس زیرساخت شبکه و سرور)',
+    email: 'm.farhadi@corp.local',
+    department: 'فناوری اطلاعات و شبکه',
+    internalPhone: '۱۰۶',
+    mobilePhone: '۰۹۱۹۴۴۴۰۰۱۳',
+    role: 'USER',
+    adGroups: ['Domain Users', 'IT_Support'],
+    avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'امروز، ساعت ۱۰:۰۰',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+  {
+    id: 'usr-ad-salehi',
+    username: 'CORP\\j.salehi',
+    displayName: 'جواد صالحی (سرپرست انبار مرکزی)',
+    email: 'j.salehi@corp.local',
+    department: 'تدارکات و انبار مرکزی',
+    internalPhone: '۴۲۵',
+    mobilePhone: '۰۹۱۹۵۵۵۰۰۱۴',
+    role: 'USER',
+    adGroups: ['Domain Users', 'Procurement_Team'],
+    avatar: 'https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?auto=format&fit=crop&w=150&q=80',
+    lastLoginShamsi: 'دیروز، ساعت ۱۱:۳۰',
+    status: 'ACTIVE',
+    profileCompleted: true,
+  },
+];
 
 const DEFAULT_REPORT_REASONS: ReportReasonRecord[] = [
   {
@@ -236,8 +455,20 @@ function loadDatabase(): ServerDatabaseState {
     if (fs.existsSync(DB_FILE)) {
       const raw = fs.readFileSync(DB_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
-      return {
-        users: Array.isArray(parsed.users) ? parsed.users : [],
+
+      const rawUsers = Array.isArray(parsed.users) ? parsed.users : [];
+      // Merge with DEFAULT_USERS so that corporate Active Directory staff are always present
+      const usersMap = new Map();
+      for (const u of DEFAULT_USERS) {
+        usersMap.set(u.id, u);
+      }
+      for (const u of rawUsers) {
+        usersMap.set(u.id, { ...usersMap.get(u.id), ...u });
+      }
+      const effectiveUsers = Array.from(usersMap.values());
+
+      const state: ServerDatabaseState = {
+        users: effectiveUsers,
         categories: Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : DEFAULT_CATEGORIES,
         ads: Array.isArray(parsed.ads) ? parsed.ads : [],
         adReports: Array.isArray(parsed.adReports) ? parsed.adReports : [],
@@ -257,14 +488,22 @@ function loadDatabase(): ServerDatabaseState {
         auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [],
         bookmarks: Array.isArray(parsed.bookmarks) ? parsed.bookmarks : [],
         adminLocalPassword: parsed.adminLocalPassword || '',
+        uiTexts: parsed.uiTexts && typeof parsed.uiTexts === 'object' ? parsed.uiTexts : {},
       };
+
+      // If database file had fewer users than effectiveUsers, re-save it
+      if (rawUsers.length < effectiveUsers.length) {
+        saveDatabase(state);
+      }
+
+      return state;
     }
   } catch (e) {
     console.error('Error reading database file:', e);
   }
 
   const initial: ServerDatabaseState = {
-    users: [],
+    users: [...DEFAULT_USERS],
     categories: DEFAULT_CATEGORIES,
     ads: [],
     adReports: [],
@@ -284,6 +523,7 @@ function loadDatabase(): ServerDatabaseState {
     auditLogs: [],
     bookmarks: [],
     adminLocalPassword: '',
+    uiTexts: {},
   };
   saveDatabase(initial);
   return initial;
@@ -318,6 +558,7 @@ export function registerDatabaseRoutes(app: Express, getDbPool: () => any): void
         auditLogs: dbState.auditLogs,
         bookmarks: dbState.bookmarks,
         adminLocalPassword: dbState.adminLocalPassword,
+        uiTexts: dbState.uiTexts || {},
       });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
@@ -658,6 +899,128 @@ export function registerDatabaseRoutes(app: Express, getDbPool: () => any): void
         saveDatabase(dbState);
       }
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // 12. UI Texts CMS (Dynamic System Text Overrides): GET, POST, DELETE, RESET
+  app.get('/api/db/ui-texts', (req, res) => {
+    res.json({ success: true, texts: dbState.uiTexts || {} });
+  });
+
+  app.post('/api/db/ui-texts', async (req, res) => {
+    try {
+      const { key, value, texts } = req.body;
+      if (!dbState.uiTexts) dbState.uiTexts = {};
+      if (texts && typeof texts === 'object') {
+        dbState.uiTexts = { ...dbState.uiTexts, ...texts };
+      } else if (key) {
+        dbState.uiTexts[key] = String(value ?? '');
+      }
+      saveDatabase(dbState);
+      res.json({ success: true, texts: dbState.uiTexts });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.delete('/api/db/ui-texts/:key', async (req, res) => {
+    try {
+      const { key } = req.params;
+      if (dbState.uiTexts && key in dbState.uiTexts) {
+        delete dbState.uiTexts[key];
+        saveDatabase(dbState);
+      }
+      res.json({ success: true, texts: dbState.uiTexts || {} });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.post('/api/db/ui-texts/reset', async (req, res) => {
+    try {
+      dbState.uiTexts = {};
+      saveDatabase(dbState);
+      res.json({ success: true, texts: {} });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // 12. Active Directory Users Endpoint
+  app.get('/api/ad/users', async (req, res) => {
+    try {
+      dbState = loadDatabase();
+      res.json({
+        success: true,
+        users: dbState.users,
+        total: dbState.users.length,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // 13. Category Manager Assignment Endpoint (Updates category and user roles)
+  app.post('/api/categories/:id/manager', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { managerId } = req.body;
+      const catIndex = dbState.categories.findIndex(c => c.id === id);
+      if (catIndex === -1) {
+        return res.status(404).json({ success: false, message: 'دسته‌بندی یافت نشد.' });
+      }
+
+      const oldManagerId = dbState.categories[catIndex].managerId;
+      const newManager = dbState.users.find(u => u.id === managerId);
+
+      if (!newManager && managerId) {
+        return res.status(404).json({ success: false, message: 'کاربر مورد نظر در اکتیو دایرکتوری یافت نشد.' });
+      }
+
+      // Update category
+      dbState.categories[catIndex] = {
+        ...dbState.categories[catIndex],
+        managerId: newManager ? newManager.id : '',
+        managerName: newManager ? newManager.displayName : 'تعیین نشده',
+        managerDepartment: newManager ? newManager.department : '',
+      };
+
+      // Promote new manager to CATEGORY_MANAGER if not SUPER_ADMIN
+      if (newManager) {
+        const uIdx = dbState.users.findIndex(u => u.id === newManager.id);
+        if (uIdx >= 0) {
+          const currentManaged = Array.isArray(dbState.users[uIdx].managedCategoryIds)
+            ? dbState.users[uIdx].managedCategoryIds
+            : [];
+          dbState.users[uIdx] = {
+            ...dbState.users[uIdx],
+            role: dbState.users[uIdx].role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'CATEGORY_MANAGER',
+            managedCategoryIds: Array.from(new Set([...currentManaged, id])),
+          };
+        }
+      }
+
+      // Cleanup old manager if different and doesn't manage other categories
+      if (oldManagerId && oldManagerId !== managerId) {
+        const oldIdx = dbState.users.findIndex(u => u.id === oldManagerId);
+        if (oldIdx >= 0 && dbState.users[oldIdx].role !== 'SUPER_ADMIN') {
+          const remaining = dbState.categories.filter(c => c.id !== id && c.managerId === oldManagerId);
+          dbState.users[oldIdx] = {
+            ...dbState.users[oldIdx],
+            role: remaining.length > 0 ? 'CATEGORY_MANAGER' : 'USER',
+            managedCategoryIds: (dbState.users[oldIdx].managedCategoryIds || []).filter((cid: string) => cid !== id),
+          };
+        }
+      }
+
+      saveDatabase(dbState);
+      res.json({
+        success: true,
+        category: dbState.categories[catIndex],
+        users: dbState.users,
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }

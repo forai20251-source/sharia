@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Category, FilterState } from '../types';
 import { toPersianDigits, formatPersianNumber } from '../utils/jalali';
+import { useText } from '../context/TextContext';
 
 interface FilterSidebarProps {
   categories: Category[];
@@ -25,6 +26,8 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
   onResetFilters,
   activeCategory,
 }) => {
+  const { t } = useText();
+
   const handleCustomFieldChange = (key: string, value: any) => {
     const updated = {
       ...filters.customFieldFilters,
@@ -51,7 +54,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
       <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-          <span className="text-sm font-bold text-slate-800 dark:text-slate-200">فیلترهای پیشرفته</span>
+          <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{t('filters.header_title', 'فیلترهای پیشرفته')}</span>
         </div>
         {hasActiveFilters && (
           <button
@@ -60,7 +63,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
             className="text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 flex items-center gap-1 font-medium"
           >
             <RotateCcw className="w-3 h-3" />
-            <span>حذف فیلترها</span>
+            <span>{t('filters.reset_btn', 'حذف فیلترها')}</span>
           </button>
         )}
       </div>
@@ -69,17 +72,17 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
       <div>
         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-1.5">
           <ArrowDownUp className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-          <span>ترتیب نمایش</span>
+          <span>{t('filters.sort_label', 'ترتیب نمایش')}</span>
         </label>
         <select
           value={filters.sortBy}
           onChange={e => onFilterChange({ sortBy: e.target.value as any })}
           className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
         >
-          <option value="NEWEST">جدیدترین آگهی‌ها</option>
-          <option value="PRICE_ASC">ارزان‌ترین</option>
-          <option value="PRICE_DESC">گران‌ترین</option>
-          <option value="VIEWS">پربازدیدترین‌ها</option>
+          <option value="NEWEST">{t('filters.sort_newest', 'جدیدترین آگهی‌ها')}</option>
+          <option value="PRICE_ASC">{t('filters.sort_cheapest', 'ارزان‌ترین')}</option>
+          <option value="PRICE_DESC">{t('filters.sort_expensive', 'گران‌ترین')}</option>
+          <option value="VIEWS">{t('filters.sort_views', 'پربازدیدترین‌ها')}</option>
         </select>
       </div>
 
@@ -87,7 +90,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
       <div>
         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-1.5">
           <Tag className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-          <span>انتخاب دسته‌بندی</span>
+          <span>{t('filters.categories_label', 'انتخاب دسته‌بندی')}</span>
         </label>
         <select
           value={filters.categoryId}
@@ -99,7 +102,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
           }}
           className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 font-medium focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
         >
-          <option value="">همه دسته‌بندی‌ها</option>
+          <option value="">{t('filters.all_categories', 'همه دسته‌بندی‌ها')}</option>
           {categories.map(c => (
             <option key={c.id} value={c.id}>
               {c.title}
@@ -110,10 +113,10 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
 
       {/* Price Range */}
       <div className="space-y-2">
-          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">محدوده قیمت (تومان)</label>
+          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">{t('filters.price_range', 'محدوده قیمت (تومان)')}</label>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">از (حداقل)</span>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">{t('filters.min_price', 'از (حداقل)')}</span>
               <input
                 type="number"
                 value={filters.minPrice ?? ''}
@@ -126,7 +129,7 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
               />
             </div>
             <div>
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">تا (حداکثر)</span>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 block mb-1">{t('filters.max_price', 'تا (حداکثر)')}</span>
               <input
                 type="number"
                 value={filters.maxPrice ?? ''}
@@ -221,9 +224,9 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({
       <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-100 dark:border-emerald-900/60 text-[11px] text-emerald-800 dark:text-emerald-300 leading-relaxed">
         <div className="font-bold flex items-center gap-1 mb-1">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-          <span>ارتباط مستقیم سازمانی</span>
+          <span>{t('filters.direct_notice_title', 'ارتباط مستقیم سازمانی')}</span>
         </div>
-        درج آگهی و تبادل خدمات در این سامانه به صورت مستقیم میان همکاران انجام شده و هیچ‌گونه کارمزد یا واسطه‌ای وجود ندارد.
+        {t('filters.direct_notice_desc', 'درج آگهی و تبادل خدمات در این سامانه به صورت مستقیم میان همکاران انجام شده و هیچ‌گونه کارمزد یا واسطه‌ای وجود ندارد.')}
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import {
 import { Ad, Category, User } from '../types';
 import { EditAdModal } from './EditAdModal';
 import { OFFLINE_IMG_DEFAULT } from '../data/offlineImages';
+import { useText } from '../context/TextContext';
 import {
   formatPrice,
   formatJalaliDate,
@@ -55,6 +56,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   onOpenReportAd,
   allowUserAdReporting = true,
 }) => {
+  const { t } = useText();
   const [currentAd, setCurrentAd] = useState<Ad>(ad);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -202,7 +204,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
             {/* Description */}
             <div className="space-y-3">
               <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800 pb-2">
-                توضیحات و مشخصات آگهی
+                {t('detail.description_title', 'توضیحات و مشخصات آگهی')}
               </h4>
               <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
                 {currentAd.description}
@@ -279,17 +281,17 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
               <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-700/80 pb-2.5">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
                   <UserCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>اطلاعات آگهی‌دهنده (کاربر سازمانی)</span>
+                  <span>{t('detail.contact_title', 'اطلاعات آگهی‌دهنده (کاربر سازمانی)')}</span>
                 </div>
               </div>
 
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-slate-500 dark:text-slate-400">نام و نام خانوادگی:</span>
+                  <span className="text-slate-500 dark:text-slate-400">{t('detail.author_name_label', 'نام و نام خانوادگی:')}</span>
                   <span className="font-bold text-slate-800 dark:text-slate-200">{currentAd.authorName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500 dark:text-slate-400">واحد سازمانی:</span>
+                  <span className="text-slate-500 dark:text-slate-400">{t('detail.department_label', 'واحد سازمانی:')}</span>
                   <span className="font-medium text-slate-800 dark:text-slate-200">{currentAd.authorDepartment}</span>
                 </div>
               </div>
@@ -300,16 +302,16 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
                   <button
                     type="button"
                     onClick={handleShowPhone}
-                    className="w-full flex items-center justify-center gap-2 bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold py-2.5 rounded-xl shadow-xs transition"
+                    className="w-full flex items-center justify-center gap-2 bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold py-2.5 rounded-xl shadow-xs transition cursor-pointer"
                   >
                     <Phone className="w-4 h-4" />
-                    <span>نمایش اطلاعات تماس و داخلی فروشنده</span>
+                    <span>{t('detail.contact_btn', 'نمایش اطلاعات تماس و داخلی فروشنده')}</span>
                   </button>
                 ) : (
                   <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl space-y-1.5 animate-in fade-in">
-                    <div className="text-[11px] text-emerald-800 dark:text-emerald-300 font-bold">اطلاعات مستقیم تماس:</div>
+                    <div className="text-[11px] text-emerald-800 dark:text-emerald-300 font-bold">{t('detail.direct_contact_title', 'اطلاعات مستقیم تماس:')}</div>
                     <div className="text-xs text-slate-800 dark:text-slate-200 font-bold flex items-center justify-between">
-                      <span>شماره موبایل و داخلی:</span>
+                      <span>{t('detail.phone_label', 'شماره موبایل و داخلی:')}</span>
                       <span dir="ltr" className="font-mono text-emerald-900 dark:text-emerald-300">{currentAd.authorPhone}</span>
                     </div>
                   </div>
@@ -323,11 +325,11 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-rose-800 dark:text-rose-300">
                     <Flag className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                    <span>مشکلی در این آگهی وجود دارد؟</span>
+                    <span>{t('detail.report_title', 'مشکلی در این آگهی وجود دارد؟')}</span>
                   </div>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                  در صورت مشاهده مغایرت محتوا، قیمت غیرواقعی، عدم پاسخگویی یا واگذاری کالا، به مدیریت سامانه اطلاع دهید.
+                  {t('detail.report_desc', 'در صورت مشاهده مغایرت محتوا، قیمت غیرواقعی، عدم پاسخگویی یا واگذاری کالا، به مدیریت سامانه اطلاع دهید.')}
                 </p>
                 <button
                   type="button"
@@ -335,7 +337,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
                   className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-xs font-bold transition shadow-2xs cursor-pointer"
                 >
                   <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                  <span>ثبت گزارش تخلف یا مشکل این آگهی</span>
+                  <span>{t('detail.report_btn', 'ثبت گزارش تخلف یا مشکل این آگهی')}</span>
                 </button>
               </div>
             )}

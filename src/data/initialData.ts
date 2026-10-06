@@ -1,5 +1,6 @@
 import { User, Category, Ad, ActiveDirectoryConfig, MySQLConfig, AuditLog, AdPostingPolicy } from '../types';
 import { MALE_FACELESS_AVATARS } from './defaultAvatars';
+import { DEFAULT_AD_USERS } from './defaultAdUsers';
 import {
   OFFLINE_IMG_VEHICLE,
   OFFLINE_IMG_REAL_ESTATE,
@@ -8,7 +9,7 @@ import {
   OFFLINE_IMG_SERVICES,
 } from './offlineImages';
 
-export const INITIAL_USERS: User[] = [];
+export const INITIAL_USERS: User[] = [...DEFAULT_AD_USERS];
 
 export const INITIAL_CATEGORIES: Category[] = [
   {
@@ -18,9 +19,9 @@ export const INITIAL_CATEGORIES: Category[] = [
     icon: 'Car',
     description: 'خرید و فروش خودروهای شخصی، اداری، سازمانی و قطعات یدکی',
     color: 'from-blue-500 to-indigo-600',
-    managerId: '',
-    managerName: 'تعیین نشده',
-    managerDepartment: '',
+    managerId: 'usr-ad-kazemi',
+    managerName: 'محمد کاظمی (مدیر نقلیه و خودرو)',
+    managerDepartment: 'ترابری و پشتیبانی نقلیه',
     allowAutoApprove: false,
     defaultImage: OFFLINE_IMG_VEHICLE,
     fields: [
@@ -101,9 +102,9 @@ export const INITIAL_CATEGORIES: Category[] = [
     icon: 'Building2',
     description: 'رهن، اجاره، خرید، فروش آپارتمان، مسکونی و دفاتر تجاری کارکنان',
     color: 'from-emerald-500 to-teal-700',
-    managerId: '',
-    managerName: 'تعیین نشده',
-    managerDepartment: '',
+    managerId: 'usr-ad-rahimi',
+    managerName: 'سارا رحیمی (مدیر املاک و رفاهیات)',
+    managerDepartment: 'امور رفاهی و منابع انسانی',
     allowAutoApprove: false,
     defaultImage: OFFLINE_IMG_REAL_ESTATE,
     fields: [
@@ -182,9 +183,9 @@ export const INITIAL_CATEGORIES: Category[] = [
     icon: 'Laptop',
     description: 'لپ‌تاپ، مانیتور، گوشی موبایل، تبلت، قطعات شبکه و تجهیزات جانبی',
     color: 'from-purple-500 to-violet-700',
-    managerId: '',
-    managerName: 'تعیین نشده',
-    managerDepartment: '',
+    managerId: 'usr-ad-ebrahimi',
+    managerName: 'علی‌رضا ابراهیمی (مدیر تجهیزات دیجیتال)',
+    managerDepartment: 'فناوری اطلاعات و شبکه',
     allowAutoApprove: true,
     defaultImage: OFFLINE_IMG_DIGITAL,
     fields: [
@@ -240,9 +241,9 @@ export const INITIAL_CATEGORIES: Category[] = [
     icon: 'Briefcase',
     description: 'میز و صندلی ارگونومیک، پرینتر، اسکنر و لوازم مازاد اداری سازمان',
     color: 'from-amber-500 to-orange-600',
-    managerId: '',
-    managerName: 'تعیین نشده',
-    managerDepartment: '',
+    managerId: 'usr-ad-hosseini',
+    managerName: 'فاطمه حسینی (مدیر لوازم اداری و مصرفی)',
+    managerDepartment: 'تدارکات و انبار مرکزی',
     allowAutoApprove: true,
     defaultImage: OFFLINE_IMG_OFFICE,
     fields: [
@@ -288,9 +289,9 @@ export const INITIAL_CATEGORIES: Category[] = [
     icon: 'Sparkles',
     description: 'هم‌پیمایی (Carpooling)، خدمات آموزشی، هم‌کاری در پروژه‌ها و تبادل تخصص',
     color: 'from-rose-500 to-pink-600',
-    managerId: '',
-    managerName: 'تعیین نشده',
-    managerDepartment: '',
+    managerId: 'usr-ad-mohammadi',
+    managerName: 'حسن محمدی (مدیر خدمات و تشریفات)',
+    managerDepartment: 'خدمات عمومی و رفاهی',
     allowAutoApprove: true,
     defaultImage: OFFLINE_IMG_SERVICES,
     fields: [

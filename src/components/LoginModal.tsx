@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { User as UserType } from '../types';
 import { storageService } from '../services/storageService';
+import { useText } from '../context/TextContext';
 
 interface LoginModalProps {
   users?: UserType[];
@@ -25,6 +26,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   onSelectUser,
   loginNotice,
 }) => {
+  const { t } = useText();
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -34,11 +36,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!usernameInput.trim()) {
-      setErrorMsg('لطفاً نام کاربری خود را وارد نمایید.');
+      setErrorMsg(t('login.username_required', 'لطفاً نام کاربری خود را وارد نمایید.'));
       return;
     }
     if (!passwordInput) {
-      setErrorMsg('لطفاً کلمه عبور خود را وارد نمایید.');
+      setErrorMsg(t('login.password_required', 'لطفاً کلمه عبور خود را وارد نمایید.'));
       return;
     }
 
@@ -59,7 +61,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           rawMsg.includes('اشتباه');
 
         if (isWrongCreds) {
-          setErrorMsg('نام کاربری یا کلمه عبور وارد شده در اکتیو دایرکتوری صحیح نمی‌باشد.');
+          setErrorMsg(t('login.error_invalid_credentials', 'نام کاربری یا کلمه عبور وارد شده در اکتیو دایرکتوری صحیح نمی‌باشد.'));
         } else if (
           res.code === 'AD_NOT_CONFIGURED' ||
           res.code === 'AD_UNREACHABLE' ||
@@ -68,13 +70,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           rawMsg.includes('در دسترس نیست') ||
           rawMsg.includes('تنظیم نشده است')
         ) {
-          setErrorMsg('سرویس احراز هویت در حال حاضر در دسترس نیست. لطفاً با مدیر سیستم تماس بگیرید.');
+          setErrorMsg(t('login.error_ad_unavailable', 'سرویس احراز هویت در حال حاضر در دسترس نیست. لطفاً با مدیر سیستم تماس بگیرید.'));
         } else {
-          setErrorMsg(rawMsg || 'نام کاربری یا کلمه عبور وارد شده صحیح نمی‌باشد.');
+          setErrorMsg(rawMsg || t('login.error_invalid_credentials', 'نام کاربری یا کلمه عبور وارد شده صحیح نمی‌باشد.'));
         }
       }
     } catch {
-      setErrorMsg('خطای برقراری ارتباط با سامانه. لطفاً لحظاتی دیگر تلاش فرمایید.');
+      setErrorMsg(t('login.error_network', 'خطای برقراری ارتباط با سامانه. لطفاً لحظاتی دیگر تلاش فرمایید.'));
     } finally {
       setLoading(false);
     }
@@ -102,8 +104,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               <LogIn className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="font-extrabold text-base">ورود به حساب کاربری</h3>
-              <p className="text-xs text-slate-300 mt-0.5">ورود به سامانه پرسنلی سازمان</p>
+              <h3 className="font-extrabold text-base">{t('login.modal_title', 'ورود به حساب کاربری')}</h3>
+              <p className="text-xs text-slate-300 mt-0.5">{t('login.modal_subtitle', 'ورود به سامانه پرسنلی سازمان')}</p>
             </div>
           </div>
         </div>
@@ -113,7 +115,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs font-bold flex items-center gap-2.5 animate-in fade-in">
               <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
               <div>
-                <div>ورود به حساب کاربری الزامی است:</div>
+                <div>{t('login.notice_title', 'ورود به حساب کاربری الزامی است:')}</div>
                 <div className="font-normal text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">{loginNotice}</div>
               </div>
             </div>
@@ -123,14 +125,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             {/* Username */}
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                نام کاربری
+                {t('login.username_label', 'نام کاربری')}
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={usernameInput}
                   onChange={e => setUsernameInput(e.target.value)}
-                  placeholder="نام کاربری سازمانی..."
+                  placeholder={t('login.username_placeholder', 'نام کاربری سازمانی...')}
                   dir="ltr"
                   autoFocus
                   className="w-full bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition pr-10 text-left font-mono"
@@ -142,14 +144,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             {/* Password */}
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                کلمه عبور
+                {t('login.password_label', 'کلمه عبور')}
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={passwordInput}
                   onChange={e => setPasswordInput(e.target.value)}
-                  placeholder="کلمه عبور..."
+                  placeholder={t('login.password_placeholder', 'کلمه عبور...')}
                   dir="ltr"
                   className="w-full bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition pr-10 pl-10 text-left font-mono"
                 />
@@ -180,12 +182,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               {loading ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>در حال بررسی مشخصات...</span>
+                  <span>{t('login.loading_btn', 'در حال بررسی مشخصات...')}</span>
                 </>
               ) : (
                 <>
                   <LogIn className="w-4 h-4" />
-                  <span>ورود به سامانه</span>
+                  <span>{t('login.submit_btn', 'ورود به سامانه')}</span>
                 </>
               )}
             </button>

@@ -2,6 +2,7 @@ import React from 'react';
 import { Bookmark, Clock, MapPin, Sparkles, CheckCircle, Flame, Eye } from 'lucide-react';
 import { Ad, Category } from '../types';
 import { formatPrice, formatPersianRelativeTime, toPersianDigits } from '../utils/jalali';
+import { useText } from '../context/TextContext';
 
 import { OFFLINE_IMG_DEFAULT } from '../data/offlineImages';
 
@@ -20,6 +21,7 @@ export const AdCard: React.FC<AdCardProps> = ({
   onToggleBookmark,
   onClick,
 }) => {
+  const { t } = useText();
   // Extract custom fields that are configured with `showInCard = true`
   const dynamicBadges: string[] = [];
   if (category && ad.customFields) {
@@ -66,17 +68,17 @@ export const AdCard: React.FC<AdCardProps> = ({
             {ad.isUrgent && (
               <span className="flex items-center gap-1 bg-rose-600/90 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-lg shadow-xs">
                 <Flame className="w-3 h-3" />
-                فوری
+                {t('card.urgent_badge', 'فوری')}
               </span>
             )}
             {ad.status === 'PENDING' && (
               <span className="bg-amber-600/90 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-lg shadow-xs">
-                در انتظار تایید
+                {t('card.pending_badge', 'در انتظار تایید')}
               </span>
             )}
             {isDefaultCategoryImage && (
               <span className="bg-slate-900/80 backdrop-blur-xs text-slate-200 text-[10px] font-medium px-2 py-0.5 rounded-lg shadow-xs border border-white/10">
-                تصویر پیش‌فرض دسته
+                {t('card.default_img_badge', 'تصویر پیش‌فرض دسته')}
               </span>
             )}
           </div>
@@ -93,7 +95,7 @@ export const AdCard: React.FC<AdCardProps> = ({
                 ? 'bg-rose-600 text-white shadow-sm'
                 : 'bg-black/30 hover:bg-black/50 text-white'
             }`}
-            title="نشان کردن آگهی"
+            title={t('card.bookmark_title', 'نشان کردن آگهی')}
           >
             <Bookmark className={`w-3.5 h-3.5 ${isBookmarked ? 'fill-white' : ''}`} />
           </button>

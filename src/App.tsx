@@ -39,6 +39,7 @@ import { AdminAuthModal } from './components/AdminPanel/AdminAuthModal';
 import { EditProfileModal } from './components/EditProfileModal';
 import { ReportAdModal } from './components/ReportAdModal';
 import { toPersianDigits } from './utils/jalali';
+import { useText } from './context/TextContext';
 
 const INITIAL_FILTER_STATE: FilterState = {
   searchQuery: '',
@@ -53,6 +54,7 @@ const INITIAL_FILTER_STATE: FilterState = {
 };
 
 export default function App() {
+  const { t } = useText();
   // Global Data States
   const [users, setUsers] = useState<User[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -289,6 +291,12 @@ export default function App() {
   const handleSaveADConfig = (cfg: Partial<ActiveDirectoryConfig>) => {
     storageService.saveActiveDirectoryConfig(cfg);
     refreshData();
+  };
+
+  const handleSyncADUsers = async () => {
+    const res = await storageService.syncActiveDirectoryUsers();
+    refreshData();
+    return res;
   };
 
   // User & Profile Actions
@@ -638,17 +646,19 @@ export default function App() {
                 <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 flex items-center justify-center mx-auto">
                   <Search className="w-6 h-6" />
                 </div>
-                <h3 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">آگهی متناسب با فیلترهای شما یافت نشد</h3>
+                <h3 className="font-extrabold text-slate-800 dark:text-slate-200 text-sm">
+                  {t('messages.empty_ads_title', 'آگهی متناسب با فیلترهای شما یافت نشد')}
+                </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                  می‌توانید عبارت جست‌وجو را تغییر دهید یا فیلترهای اعمال شده را حذف کنید.
+                  {t('messages.empty_ads_desc', 'می‌توانید عبارت جست‌وجو را تغییر دهید یا فیلترهای اعمال شده را حذف کنید.')}
                 </p>
                 <button
                   type="button"
                   onClick={handleResetFilters}
-                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-4 py-2 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition"
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-4 py-2 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>پاک کردن تمامی فیلترها</span>
+                  <span>{t('filters.reset_btn', 'پاک کردن تمامی فیلترها')}</span>
                 </button>
               </div>
             )}
@@ -664,13 +674,13 @@ export default function App() {
               type="button"
               onClick={() => setIsAdminAuthOpen(true)}
               className="w-6 h-6 rounded-lg bg-rose-600 text-white flex items-center justify-center font-bold text-xs cursor-default select-none focus:outline-none"
-              title="دیوار سازمانی"
+              title={t('navbar.brand_name', 'دیوار سازمانی')}
             >
               د
             </button>
-            <span className="font-bold text-slate-800 dark:text-slate-200">سامانه آگهی سازمانی دیوار</span>
+            <span className="font-bold text-slate-800 dark:text-slate-200">{t('footer.brand_title', 'سامانه آگهی سازمانی دیوار')}</span>
             <span className="text-slate-400 dark:text-slate-600">|</span>
-            <span>طراحی شده برای پرسنل و شبکه داخلی سازمان</span>
+            <span>{t('footer.brand_subtitle', 'طراحی شده برای پرسنل و شبکه داخلی سازمان')}</span>
           </div>
 
           <div className="flex items-center gap-4 text-[11px] text-slate-400 dark:text-slate-500">
@@ -788,6 +798,7 @@ export default function App() {
           onAddFieldToCategory={handleAddFieldToCategory}
           onDeleteCategoryField={handleDeleteCategoryField}
           onSaveADConfig={handleSaveADConfig}
+          onSyncADUsers={handleSyncADUsers}
           onTestADConnection={(cfg) => storageService.testActiveDirectoryConnection(cfg)}
           onTestMySQLConnection={() => storageService.testMySQLConnection()}
           onInitMySQLSchema={() => storageService.initMySQLSchema()}

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { User, UserQuotaStatus } from '../types';
 import { useTheme } from '../context/ThemeContext';
+import { useText } from '../context/TextContext';
 import { toPersianDigits } from '../utils/jalali';
 
 interface NavbarProps {
@@ -54,15 +55,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const { t } = useText();
 
   const getRoleLabel = (role: User['role']) => {
     switch (role) {
       case 'SUPER_ADMIN':
-        return { text: 'مدیر ارشد سیستم', color: 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' };
+        return { text: t('navbar.role_super_admin', 'مدیر ارشد سیستم'), color: 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' };
       case 'CATEGORY_MANAGER':
-        return { text: 'مدیر دسته‌بندی', color: 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' };
+        return { text: t('navbar.role_manager', 'مدیر دسته‌بندی'), color: 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' };
       default:
-        return { text: 'کاربر سازمانی', color: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' };
+        return { text: t('navbar.role_user', 'کاربر سازمانی'), color: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' };
     }
   };
 
@@ -80,12 +82,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <div className="hidden sm:block leading-tight">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-extrabold text-lg text-slate-900 dark:text-white tracking-tight">دیـوار</span>
+                  <span className="font-extrabold text-lg text-slate-900 dark:text-white tracking-tight">{t('navbar.brand_name', 'دیـوار')}</span>
                   <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                    سازمانی
+                    {t('navbar.brand_badge', 'سازمانی')}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">سامانه ثبت آگهی داخلی پرسنل</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">{t('navbar.brand_subtitle', 'سامانه ثبت آگهی داخلی پرسنل')}</p>
               </div>
             </div>
           </div>
@@ -97,7 +99,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={e => onSearchChange(e.target.value)}
-                placeholder="جست‌وجو در عنوان آگهی، مشخصات فنی، برند یا شماره داخلی..."
+                placeholder={t('navbar.search_placeholder', 'جست‌وجو در عنوان آگهی، مشخصات فنی، برند یا شماره داخلی...')}
                 className="w-full bg-slate-100/90 dark:bg-slate-800/90 hover:bg-slate-100 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-sm rounded-xl pl-9 pr-10 py-2.5 border border-transparent focus:border-rose-500 dark:focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15 transition outline-none"
               />
               <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute right-3.5 top-3" />
@@ -107,7 +109,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => onSearchChange('')}
                   className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 absolute left-3 top-3"
                 >
-                  پاک کردن
+                  {t('navbar.clear_search', 'پاک کردن')}
                 </button>
               )}
             </div>
@@ -130,16 +132,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
-            {/* Admin & Reports button - strictly hidden from users and only visible to authenticated administrators */}
+            {/* Admin & Reports button */}
             {currentUser && (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'CATEGORY_MANAGER') && (
               <button
                 type="button"
                 onClick={onOpenAdmin}
                 className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition"
-                title="پنل مدیریت، نظارت بر آگهی‌ها و گزارش‌گیری"
+                title={t('navbar.admin_btn', 'پنل مدیریت و گزارشات')}
               >
                 <ShieldAlert className="w-4 h-4 text-rose-600" />
-                <span className="hidden lg:inline">پنل مدیریت و گزارشات</span>
+                <span className="hidden lg:inline">{t('navbar.admin_btn', 'پنل مدیریت و گزارشات')}</span>
                 <span className="lg:hidden">مدیریت</span>
               </button>
             )}
@@ -153,7 +155,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800 font-bold'
                   : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
               }`}
-              title="نشان‌شده‌ها"
+              title={t('navbar.bookmarks_btn', 'نشان‌شده‌ها')}
             >
               <Bookmark className={`w-4 h-4 ${showOnlyBookmarks ? 'fill-rose-600 dark:fill-rose-400' : ''}`} />
               {bookmarksCount > 0 && (
@@ -163,14 +165,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
-            {/* Post Ad Button (Divar Style) */}
+            {/* Post Ad Button */}
             <button
               type="button"
               onClick={onOpenPostAd}
               className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold px-3.5 sm:px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition active:scale-95 shrink-0"
             >
               <PlusCircle className="w-4 h-4" />
-              <span>ثبت آگهی جدید</span>
+              <span>{t('navbar.post_ad_btn', 'ثبت آگهی رایگان')}</span>
             </button>
 
             {/* Active Directory User Profile & Switcher OR Login Button */}
@@ -288,7 +290,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           className="w-full text-right px-4 py-2.5 text-xs text-slate-800 dark:text-slate-200 hover:bg-rose-50/70 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-300 flex items-center gap-2 font-bold transition"
                         >
                           <UserCog className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-                          <span>ویرایش مشخصات پروفایل</span>
+                          <span>{t('navbar.edit_profile_btn', 'ویرایش مشخصات پروفایل')}</span>
                         </button>
 
                         {(currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'CATEGORY_MANAGER') && (
@@ -301,7 +303,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             className="w-full text-right px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
                           >
                             <ShieldAlert className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                            <span>داشبورد مدیریتی و گزارش عملکرد</span>
+                            <span>{t('navbar.admin_btn', 'داشبورد مدیریتی و گزارش عملکرد')}</span>
                           </button>
                         )}
 
@@ -328,7 +330,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           className="w-full text-right px-4 py-2 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2 font-medium"
                         >
                           <LogOut className="w-4 h-4" />
-                          <span>خروج از حساب کاربری</span>
+                          <span>{t('navbar.logout_btn', 'خروج از حساب کاربری')}</span>
                         </button>
                       </div>
                     </div>
@@ -342,7 +344,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold transition shadow-xs"
               >
                 <LogIn className="w-4 h-4 text-rose-400 dark:text-rose-600" />
-                <span>ورود به حساب</span>
+                <span>{t('navbar.login_btn', 'ورود به حساب کاربری')}</span>
               </button>
             )}
           </div>

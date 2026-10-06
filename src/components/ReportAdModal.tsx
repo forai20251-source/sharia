@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Ad, User, AdReportReason, ReportReasonConfig } from '../types';
 import { DEFAULT_REPORT_REASONS } from '../data/defaultReportReasons';
+import { useText } from '../context/TextContext';
 
 interface ReportAdModalProps {
   isOpen: boolean;
@@ -39,6 +40,8 @@ export const ReportAdModal: React.FC<ReportAdModalProps> = ({
   onSubmitReport,
   onOpenLogin,
 }) => {
+  const { t } = useText();
+
   // Use active report reasons passed from database, ordered by orderNum, fallback to default
   const activeReasons = useMemo(() => {
     if (reportReasons && reportReasons.length > 0) {
@@ -108,7 +111,7 @@ export const ReportAdModal: React.FC<ReportAdModalProps> = ({
             </div>
             <div>
               <h2 className="font-extrabold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <span>گزارش مشکل یا تخلف آگهی</span>
+                <span>{t('report.modal_title', 'گزارش مشکل یا تخلف آگهی')}</span>
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
                 آگهی: {ad.title}
@@ -133,10 +136,10 @@ export const ReportAdModal: React.FC<ReportAdModalProps> = ({
             </div>
             <div className="space-y-1">
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                نیاز به ورود به حساب کاربری
+                {t('report.login_required_title', 'نیاز به ورود به حساب کاربری')}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
-                جهت جلوگیری از گزارش‌های نامعتبر، برای ارسال گزارش تخلف به مدیر سامانه، ابتدا باید با حساب ویندوز خود وارد شوید.
+                {t('report.login_required_desc', 'جهت جلوگیری از گزارش‌های نامعتبر، برای ارسال گزارش تخلف به مدیر سامانه، ابتدا باید با حساب ویندوز خود وارد شوید.')}
               </p>
             </div>
             <button
@@ -148,7 +151,7 @@ export const ReportAdModal: React.FC<ReportAdModalProps> = ({
               className="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition cursor-pointer shadow-xs"
             >
               <LogIn className="w-4 h-4" />
-              <span>ورود به حساب کاربری</span>
+              <span>{t('navbar.login_btn', 'ورود به حساب کاربری')}</span>
             </button>
           </div>
         ) : (
@@ -172,10 +175,10 @@ export const ReportAdModal: React.FC<ReportAdModalProps> = ({
 
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                علت گزارش تخلف را انتخاب کنید:
+                {t('report.select_reason', 'علت گزارش تخلف را انتخاب کنید:')}
               </label>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                گزارش شما همراه با نام و شناسه سازمانی به مدیریت سامانه جهت بررسی و اقدام ارسال می‌گردد.
+                {t('report.select_reason_hint', 'گزارش شما همراه با نام و شناسه سازمانی به مدیریت سامانه جهت بررسی و اقدام ارسال می‌گردد.')}
               </p>
             </div>
 
@@ -216,12 +219,12 @@ export const ReportAdModal: React.FC<ReportAdModalProps> = ({
 
             <div className="space-y-1.5 pt-1">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                توضیحات تکمیلی برای مدیر سامانه <span className="text-[10px] text-slate-400 font-normal">(اختیاری)</span>
+                {t('report.comments_label', 'توضیحات تکمیلی برای مدیر سامانه')} <span className="text-[10px] text-slate-400 font-normal">(اختیاری)</span>
               </label>
               <textarea
                 value={description}
                 onChange={e => setDescription(e.target.value)}
-                placeholder="در صورت تمایل، جزئیات بیشتری درباره مشکل این آگهی بنویسید..."
+                placeholder={t('report.comments_placeholder', 'در صورت تمایل، جزئیات بیشتری درباره مشکل این آگهی بنویسید...')}
                 rows={3}
                 maxLength={400}
                 className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-rose-500 resize-none transition"
@@ -238,7 +241,7 @@ export const ReportAdModal: React.FC<ReportAdModalProps> = ({
                 onClick={onClose}
                 className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition cursor-pointer"
               >
-                انصراف
+                {t('report.cancel_btn', 'انصراف')}
               </button>
               <button
                 type="submit"
@@ -246,7 +249,7 @@ export const ReportAdModal: React.FC<ReportAdModalProps> = ({
                 className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>{isSubmitting ? 'در حال ارسال...' : 'ارسال گزارش به مدیر'}</span>
+                <span>{isSubmitting ? t('report.submitting_btn', 'در حال ارسال...') : t('report.submit_btn', 'ارسال گزارش به مدیر')}</span>
               </button>
             </div>
           </form>
