@@ -364,6 +364,90 @@ class StorageService {
         setToStorage(STORAGE_KEYS.ADS, this.ads);
       }
 
+      // Synchronize Categories when user role or managedCategoryIds change
+      let categoriesChanged = false;
+      if (updatedUser.role === 'CATEGORY_MANAGER') {
+        const managedIds = Array.isArray(updatedUser.managedCategoryIds) ? updatedUser.managedCategoryIds : [];
+        const managedSet = new Set(managedIds);
+
+        this.categories = this.categories.map(cat => {
+          if (managedSet.has(cat.id)) {
+            if (cat.managerId !== updatedUser!.id || cat.managerName !== updatedUser!.displayName || cat.managerDepartment !== (updatedUser!.department || '')) {
+              categoriesChanged = true;
+              return {
+                ...cat,
+                managerId: updatedUser!.id,
+                managerName: updatedUser!.displayName,
+                managerDepartment: updatedUser!.department || '',
+              };
+            }
+          } else if (cat.managerId === updatedUser!.id) {
+            // Was previously assigned to this category but is no longer in managedCategoryIds
+            categoriesChanged = true;
+            return {
+              ...cat,
+              managerId: '',
+              managerName: 'تعیین نشده',
+              managerDepartment: '',
+            };
+          }
+          return cat;
+        });
+      } else if (updatedUser.role === 'USER') {
+        // If demoted or set to normal user, unassign them from any categories they managed
+        this.categories = this.categories.map(cat => {
+          if (cat.managerId === updatedUser!.id) {
+            categoriesChanged = true;
+            return {
+              ...cat,
+              managerId: '',
+              managerName: 'تعیین نشده',
+              managerDepartment: '',
+            };
+          }
+          return cat;
+        });
+        if (updatedUser.managedCategoryIds && updatedUser.managedCategoryIds.length > 0) {
+          updatedUser.managedCategoryIds = [];
+        }
+      } else {
+        // Role is SUPER_ADMIN or other: update managerName and managerDepartment on categories they manage
+        this.categories = this.categories.map(cat => {
+          if (cat.managerId === updatedUser!.id) {
+            if (cat.managerName !== updatedUser!.displayName || cat.managerDepartment !== (updatedUser!.department || '')) {
+              categoriesChanged = true;
+              return {
+                ...cat,
+                managerName: updatedUser!.displayName,
+                managerDepartment: updatedUser!.department || '',
+              };
+            }
+          }
+          return cat;
+        });
+      }
+
+      if (categoriesChanged) {
+        setToStorage(STORAGE_KEYS.CATEGORIES, this.categories);
+        // Sync categories to backend
+        if (typeof window !== 'undefined') {
+          fetch(getApiUrl('/api/categories'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(this.categories),
+          }).catch(() => {});
+        }
+      }
+
+      // Sync updated user to server
+      if (typeof window !== 'undefined') {
+        fetch(getApiUrl('/api/db/users'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedUser),
+        }).catch(() => {});
+      }
+
       this.addAuditLog({
         action: 'UPDATE_USER',
         details: `ویرایش مشخصات پروفایل کاربر "${updatedUser.displayName} (${updatedUser.username})"${
@@ -538,6 +622,11 @@ class StorageService {
         ...cat,
         fields: cat.fields || this.categories[existingIndex].fields || [],
       } as Category;
+      if (cat.managerId === '' || cat.managerId === null) {
+        saved.managerId = '';
+        saved.managerName = 'تعیین نشده';
+        saved.managerDepartment = '';
+      }
       this.categories[existingIndex] = saved;
     } else {
       saved = {
@@ -573,7 +662,7 @@ class StorageService {
         };
         // Update category's manager info from the actual user record
         saved.managerName = mgrUser.displayName;
-        saved.managerDepartment = mgrUser.department;
+        saved.managerDepartment = mgrUser.department || '';
 
         // If current session is this user, update session as well
         if (this.currentUser && this.currentUser.id === newManagerId) {

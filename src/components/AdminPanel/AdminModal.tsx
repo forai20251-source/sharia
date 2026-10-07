@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   BarChart3,
@@ -147,6 +147,7 @@ interface AdminModalProps {
   onAddFieldToCategory: (catId: string, field: Omit<CategoryField, 'id' | 'categoryId'>) => void;
   onDeleteCategoryField: (catId: string, fieldId: string) => void;
   onSaveADConfig: (cfg: Partial<ActiveDirectoryConfig>) => void;
+  onSyncADUsers?: () => Promise<{ success: boolean; users?: User[]; message: string; count?: number }>;
   onTestADConnection: (cfg?: Partial<ActiveDirectoryConfig>) => Promise<{ success: boolean; latencyMs: number; message: string; details: any }> | { success: boolean; latencyMs: number; message: string; details: any };
   onTestMySQLConnection: () => Promise<{
     success: boolean;
@@ -212,6 +213,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onAddFieldToCategory,
   onDeleteCategoryField,
   onSaveADConfig,
+  onSyncADUsers,
   onTestADConnection,
   onTestMySQLConnection,
   onInitMySQLSchema,
@@ -229,6 +231,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onToggleReportReason,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('ANALYTICS');
+
+  // Active Directory Category Manager Picker Modal State
+  const [adPickerCategory, setAdPickerCategory] = useState<Category | null>(null);
+  const [adPickerMode, setAdPickerMode] = useState<'CATEGORY_CARD' | 'MODAL_FORM' | null>(null);
+  const [adPickerSearch, setAdPickerSearch] = useState('');
+  const [adPickerDepartmentFilter, setAdPickerDepartmentFilter] = useState('ALL');
+  const [adPickerGroupFilter, setAdPickerGroupFilter] = useState<'ALL' | 'MANAGERS' | 'ADMINS' | 'AVAILABLE'>('ALL');
+  const [isSyncingAD, setIsSyncingAD] = useState(false);
+  const [adSyncNotice, setAdSyncNotice] = useState<string | null>(null);
+  const [adTabUserSearch, setAdTabUserSearch] = useState('');
+  const [adTabRoleFilter, setAdTabRoleFilter] = useState<'ALL' | 'CATEGORY_MANAGER' | 'SUPER_ADMIN' | 'USER'>('ALL');
+  const [adTabQuickAssignNotice, setAdTabQuickAssignNotice] = useState<string | null>(null);
 
   // Ad editing for administrators
   const [editingAd, setEditingAd] = useState<Ad | null>(null);
@@ -722,7 +736,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     e.preventDefault();
     if (!catFormTitle.trim()) return;
 
-    const assignedMgr = users.find(u => u.id === catFormManagerId) || users[0] || currentUser;
+    const assignedMgr = users.find(u => u.id === catFormManagerId);
     const slug = catFormSlug.trim() || `cat-${Date.now().toString().slice(-4)}`;
 
     if (categoryModalMode === 'CREATE') {
@@ -734,9 +748,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         description: catFormDescription.trim(),
         icon: catFormIcon,
         color: catFormColor,
-        managerId: assignedMgr.id,
-        managerName: assignedMgr.displayName,
-        managerDepartment: assignedMgr.department,
+        managerId: assignedMgr ? assignedMgr.id : '',
+        managerName: assignedMgr ? assignedMgr.displayName : 'تعیین نشده',
+        managerDepartment: assignedMgr ? assignedMgr.department : '',
         allowAutoApprove: catFormAutoApprove,
         defaultImage: catFormDefaultImage.trim() || undefined,
         fields: [],
@@ -750,9 +764,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         description: catFormDescription.trim(),
         icon: catFormIcon,
         color: catFormColor,
-        managerId: assignedMgr.id,
-        managerName: assignedMgr.displayName,
-        managerDepartment: assignedMgr.department,
+        managerId: assignedMgr ? assignedMgr.id : '',
+        managerName: assignedMgr ? assignedMgr.displayName : 'تعیین نشده',
+        managerDepartment: assignedMgr ? assignedMgr.department : '',
         allowAutoApprove: catFormAutoApprove,
         defaultImage: catFormDefaultImage.trim() || undefined,
       });
@@ -760,6 +774,75 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
     setShowCategoryModal(false);
   };
+
+  // Active Directory Sync & Category Manager Assignment handlers
+  const handleSyncAD = async () => {
+    setIsSyncingAD(true);
+    setAdSyncNotice(null);
+    try {
+      if (onSyncADUsers) {
+        const res = await onSyncADUsers();
+        setAdSyncNotice(res.message || 'همگام‌سازی کاربران با موفقیت انجام شد.');
+      } else {
+        const res = await storageService.syncActiveDirectoryUsers();
+        setAdSyncNotice(res.message);
+      }
+    } catch (e: any) {
+      setAdSyncNotice(`خطا در همگام‌سازی: ${e.message}`);
+    } finally {
+      setIsSyncingAD(false);
+      setTimeout(() => setAdSyncNotice(null), 4000);
+    }
+  };
+
+  const handleSelectAdManager = (user: User) => {
+    if (adPickerMode === 'CATEGORY_CARD' && adPickerCategory) {
+      onSaveCategory({
+        id: adPickerCategory.id,
+        managerId: user.id,
+        managerName: user.displayName,
+        managerDepartment: user.department,
+      });
+      setAdPickerCategory(null);
+      setAdPickerMode(null);
+    } else if (adPickerMode === 'MODAL_FORM') {
+      setCatFormManagerId(user.id);
+      setAdPickerMode(null);
+    }
+  };
+
+  const adDepartments = useMemo(() => {
+    const set = new Set<string>();
+    users.forEach(u => {
+      if (u.department) set.add(u.department);
+    });
+    return Array.from(set);
+  }, [users]);
+
+  const filteredAdUsers = useMemo(() => {
+    return users.filter(u => {
+      if (adPickerDepartmentFilter !== 'ALL' && u.department !== adPickerDepartmentFilter) {
+        return false;
+      }
+      if (adPickerGroupFilter === 'MANAGERS' && u.role !== 'CATEGORY_MANAGER') {
+        return false;
+      }
+      if (adPickerGroupFilter === 'ADMINS' && u.role !== 'SUPER_ADMIN') {
+        return false;
+      }
+      if (adPickerGroupFilter === 'AVAILABLE' && u.role === 'CATEGORY_MANAGER') {
+        return false;
+      }
+      if (!adPickerSearch.trim()) return true;
+      const q = adPickerSearch.toLowerCase().trim();
+      const inName = (u.displayName || '').toLowerCase().includes(q);
+      const inUser = (u.username || '').toLowerCase().includes(q);
+      const inDept = (u.department || '').toLowerCase().includes(q);
+      const inPhone = (u.internalPhone || '').includes(q) || (u.mobilePhone || '').includes(q);
+      const inGroups = (u.adGroups || []).some(g => g.toLowerCase().includes(q));
+      return inName || inUser || inDept || inPhone || inGroups;
+    });
+  }, [users, adPickerDepartmentFilter, adPickerGroupFilter, adPickerSearch]);
 
   const handleDeleteCategoryPrompt = (cat: Category) => {
     setCategoryToDelete(cat);
@@ -2341,37 +2424,64 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                         <div>
                           {/* Manager info & Assignment */}
-                          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs gap-2">
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                              <span className="text-slate-500">مدیر ناظر:</span>
-                              <span className="font-bold text-slate-800 truncate max-w-[90px] sm:max-w-none">
-                                {cat.managerName}
-                              </span>
+                          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                            <div className="flex items-center justify-between text-xs gap-2">
+                              <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+                                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                <span className="text-slate-500 dark:text-slate-400 shrink-0">مدیر ناظر:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100 truncate max-w-[130px] sm:max-w-none" title={cat.managerName}>
+                                  {cat.managerName || 'تعیین نشده'}
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAdPickerCategory(cat);
+                                  setAdPickerMode('CATEGORY_CARD');
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:text-white bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-600 dark:hover:bg-rose-600 rounded-lg transition border border-rose-200 dark:border-rose-900/60 cursor-pointer shrink-0"
+                                title="انتخاب یا تغییر مدیر این دسته‌بندی از بین کاربران Active Directory"
+                              >
+                                <Server className="w-3 h-3" />
+                                <span>انتخاب از AD</span>
+                              </button>
                             </div>
 
-                            <select
-                              value={cat.managerId}
-                              onChange={e => {
-                                const newMgrId = e.target.value;
-                                const newMgr = users.find(u => u.id === newMgrId);
-                                if (newMgr) {
-                                  onSaveCategory({
-                                    id: cat.id,
-                                    managerId: newMgr.id,
-                                    managerName: newMgr.displayName,
-                                    managerDepartment: newMgr.department,
-                                  });
-                                }
-                              }}
-                              className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-medium outline-none shrink-0"
-                            >
-                              {users.map(u => (
-                                <option key={u.id} value={u.id}>
-                                  {u.displayName} ({u.department})
-                                </option>
-                              ))}
-                            </select>
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value={cat.managerId || ''}
+                                onChange={e => {
+                                  const newMgrId = e.target.value;
+                                  if (!newMgrId) {
+                                    onSaveCategory({
+                                      id: cat.id,
+                                      managerId: '',
+                                      managerName: 'تعیین نشده',
+                                      managerDepartment: '',
+                                    });
+                                    return;
+                                  }
+                                  const newMgr = users.find(u => u.id === newMgrId);
+                                  if (newMgr) {
+                                    onSaveCategory({
+                                      id: cat.id,
+                                      managerId: newMgr.id,
+                                      managerName: newMgr.displayName,
+                                      managerDepartment: newMgr.department,
+                                    });
+                                  }
+                                }}
+                                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-800 dark:text-slate-200 outline-none truncate"
+                              >
+                                <option value="">-- فاقد مدیر ناظر (کلیک جهت انتصاب از کاربران AD) --</option>
+                                {users.map(u => (
+                                  <option key={u.id} value={u.id}>
+                                    {u.displayName} ({u.department || 'دپارتمان عمومی'} — {u.username}) {u.role === 'SUPER_ADMIN' ? '★ مدیر ارشد' : u.role === 'CATEGORY_MANAGER' ? '⚡ مدیر دسته' : '👤 کاربر AD'}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
 
                           {/* Select for field management */}
@@ -2469,20 +2579,61 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="block font-bold text-slate-700 mb-1">
-                            مدیر ناظر دسته‌بندی
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block font-bold text-slate-700 dark:text-slate-300">
+                              مدیر ناظر دسته‌بندی
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAdPickerCategory(null);
+                                setAdPickerMode('MODAL_FORM');
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:underline cursor-pointer"
+                            >
+                              <Server className="w-3.5 h-3.5" />
+                              <span>جستجو در Active Directory</span>
+                            </button>
+                          </div>
                           <select
-                            value={catFormManagerId}
+                            value={catFormManagerId || ''}
                             onChange={e => setCatFormManagerId(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 font-medium"
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 font-medium"
                           >
+                            <option value="">-- بدون انتصاب مدیر ناظر (تعیین در آینده) --</option>
                             {users.map(u => (
                               <option key={u.id} value={u.id}>
-                                {u.displayName} ({u.department} - {u.role === 'SUPER_ADMIN' ? 'مدیر ارشد' : u.role === 'CATEGORY_MANAGER' ? 'مدیر دسته' : 'کاربر'})
+                                {u.displayName} ({u.department || 'دپارتمان عمومی'} — {u.username}) {u.role === 'SUPER_ADMIN' ? '★ مدیر ارشد' : u.role === 'CATEGORY_MANAGER' ? '⚡ مدیر دسته' : '👤 کاربر AD'}
                               </option>
                             ))}
                           </select>
+
+                          {/* Selected Manager Live Preview */}
+                          {(() => {
+                            const selectedMgr = users.find(u => u.id === catFormManagerId);
+                            if (!selectedMgr) return null;
+                            return (
+                              <div className="mt-2 flex items-center gap-2 p-2 bg-rose-50/70 dark:bg-rose-950/40 rounded-xl border border-rose-100 dark:border-rose-900/40 text-[11px]">
+                                <div className="w-7 h-7 rounded-full bg-rose-200 dark:bg-rose-800 text-rose-800 dark:text-rose-200 flex items-center justify-center font-bold shrink-0">
+                                  <ShieldCheck className="w-4 h-4 text-rose-600 dark:text-rose-300" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                                    {selectedMgr.displayName}
+                                  </div>
+                                  <div className="text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap">
+                                    <span>{selectedMgr.department}</span>
+                                    <span className="font-mono text-[10px] bg-white dark:bg-slate-900 px-1 rounded border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300" dir="ltr">
+                                      {selectedMgr.username}
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold shrink-0">
+                                  آماده انتصاب
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         <div>
@@ -2691,7 +2842,232 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 </div>
               )}
 
-              {/* Dynamic Field Builder for Selected Category */}
+              {/* Active Directory User Picker Modal Dialog */}
+              {adPickerMode && (
+                <div className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-4" dir="rtl">
+                  <div
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
+                    onClick={() => setAdPickerMode(null)}
+                  />
+                  <div className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-3xl w-full p-6 z-10 overflow-hidden flex flex-col max-h-[90vh] space-y-4 animate-in fade-in zoom-in-95 border border-slate-100 dark:border-slate-800">
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-indigo-600 text-white flex items-center justify-center shadow-xs">
+                          <Server className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                            <span>انتخاب مدیر دسته‌بندی از میان پرسنل Active Directory</span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold">
+                              {toPersianDigits(filteredAdUsers.length)} کاربر
+                            </span>
+                          </h4>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {adPickerMode === 'CATEGORY_CARD' && adPickerCategory
+                              ? `در حال تعیین مدیر ناظر برای دسته‌بندی «${adPickerCategory.title}»`
+                              : 'انتخاب مدیر ناظر دسته‌بندی با دسترسی تایید، رد و نظارت بر آگهی‌ها'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAdPickerMode(null)}
+                        className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Explanatory Info Card */}
+                    <div className="p-3 bg-gradient-to-r from-blue-50/70 to-indigo-50/70 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-200/60 dark:border-blue-900/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-blue-900 dark:text-blue-200">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                        <span>
+                          کاربر انتخاب‌شده به صورت خودکار به عنوان <b>مدیر دسته‌بندی (Category Manager)</b> تعیین شده و کنترل صف تایید آگهی‌های این بخش را برعهده خواهد داشت.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSyncAD}
+                        disabled={isSyncingAD}
+                        className="shrink-0 flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-slate-700 text-blue-700 dark:text-blue-300 px-3 py-1.5 rounded-xl text-[11px] font-bold transition shadow-2xs cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAD ? 'animate-spin' : ''}`} />
+                        <span>{isSyncingAD ? 'در حال دریافت...' : 'همگام‌سازی زنده دایرکتوری'}</span>
+                      </button>
+                    </div>
+
+                    {adSyncNotice && (
+                      <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2 animate-in fade-in">
+                        <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>{adSyncNotice}</span>
+                      </div>
+                    )}
+
+                    {/* Search & Filter Bar */}
+                    <div className="flex flex-col sm:flex-row items-center gap-2">
+                      <div className="relative flex-1 w-full">
+                        <input
+                          type="text"
+                          value={adPickerSearch}
+                          onChange={e => setAdPickerSearch(e.target.value)}
+                          placeholder="جستجو در نام کاربر، نام کاربری دامین (sAMAccountName)، واحد سازمانی یا گروه AD..."
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 pr-9 text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                        />
+                        <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+                        {adPickerSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setAdPickerSearch('')}
+                            className="absolute left-3 top-2.5 text-slate-400 hover:text-slate-600"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <select
+                        value={adPickerDepartmentFilter}
+                        onChange={e => setAdPickerDepartmentFilter(e.target.value)}
+                        className="w-full sm:w-48 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-100 outline-none font-medium"
+                      >
+                        <option value="ALL">همه واحدهای سازمانی</option>
+                        {adDepartments.map(dept => (
+                          <option key={dept} value={dept}>
+                            {dept}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={adPickerGroupFilter}
+                        onChange={e => setAdPickerGroupFilter(e.target.value as any)}
+                        className="w-full sm:w-40 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-100 outline-none font-medium"
+                      >
+                        <option value="ALL">همه نقش‌ها و گروه‌ها</option>
+                        <option value="MANAGERS">مدیران دسته‌ها</option>
+                        <option value="ADMINS">مدیران ارشد</option>
+                        <option value="AVAILABLE">کاربران فاقد دسته</option>
+                      </select>
+                    </div>
+
+                    {/* User Cards Grid */}
+                    <div className="flex-1 overflow-y-auto max-h-[50vh] space-y-2 pr-1">
+                      {filteredAdUsers.length === 0 ? (
+                        <div className="py-12 text-center text-slate-400 text-xs space-y-2">
+                          <Users className="w-8 h-8 mx-auto text-slate-300" />
+                          <p>هیچ کاربری با مشخصات وارد شده در Active Directory یافت نشد.</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdPickerSearch('');
+                              setAdPickerDepartmentFilter('ALL');
+                              setAdPickerGroupFilter('ALL');
+                            }}
+                            className="text-rose-600 font-bold hover:underline"
+                          >
+                            حذف فیلترها
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                          {filteredAdUsers.map(u => {
+                            const currentTargetId = adPickerMode === 'CATEGORY_CARD' && adPickerCategory ? adPickerCategory.id : null;
+                            const isCurrentManagerOfTarget = currentTargetId ? adPickerCategory?.managerId === u.id : catFormManagerId === u.id;
+                            const managedCategories = categories.filter(c => c.managerId === u.id);
+
+                            return (
+                              <div
+                                key={u.id}
+                                className={`p-3 rounded-2xl border transition flex flex-col justify-between gap-2.5 ${
+                                  isCurrentManagerOfTarget
+                                    ? 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-300 dark:border-rose-800'
+                                    : 'bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="relative shrink-0">
+                                      <img
+                                        src={typeof u.avatar === 'string' ? u.avatar : (u.avatar as any)?.url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                                        alt=""
+                                        className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-2xs"
+                                      />
+                                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-800 absolute bottom-0 left-0" title="کاربر فعال دایرکتوری" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate flex items-center gap-1.5">
+                                        <span>{u.displayName}</span>
+                                        {u.role === 'SUPER_ADMIN' && (
+                                          <span className="text-[9px] bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 px-1.5 py-0.2 rounded font-bold">
+                                            مدیر ارشد
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                        {u.department}
+                                      </div>
+                                      <div className="flex items-center gap-2 mt-1 text-[10px] font-mono text-slate-400">
+                                        <span className="bg-slate-100 dark:bg-slate-700/80 px-1 rounded text-slate-600 dark:text-slate-300" dir="ltr">
+                                          {u.username}
+                                        </span>
+                                        {u.internalPhone && (
+                                          <span>داخلی: {toPersianDigits(u.internalPhone)}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* AD Groups and Managed categories */}
+                                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/80 text-[10px]">
+                                  <div className="flex items-center gap-1 flex-wrap min-w-0">
+                                    {managedCategories.length > 0 ? (
+                                      <span className="bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 font-bold px-2 py-0.5 rounded-md truncate max-w-[170px]" title={managedCategories.map(c => c.title).join('، ')}>
+                                        مدیر: {managedCategories.map(c => c.title).join('، ')}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400">بدون دسته تحت مدیریت</span>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectAdManager(u)}
+                                    className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center gap-1 shrink-0 cursor-pointer ${
+                                      isCurrentManagerOfTarget
+                                        ? 'bg-emerald-600 text-white shadow-2xs hover:bg-emerald-700'
+                                        : 'bg-rose-600 hover:bg-rose-700 text-white shadow-2xs'
+                                    }`}
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>{isCurrentManagerOfTarget ? 'مدیر فعلی' : 'انتخاب به عنوان مدیر'}</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                        نمایش {toPersianDigits(filteredAdUsers.length)} از {toPersianDigits(users.length)} کاربر اکتیو دایرکتوری
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAdPickerMode(null)}
+                        className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+                      >
+                        بستن پنجره
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {activeCategoryObject && (
                 <div className="bg-slate-50 rounded-2xl border border-slate-200 p-5 space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-200 pb-3">
@@ -3615,6 +3991,249 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       <span>کلمه عبور اختصاصی مدیر سیستم با موفقیت ثبت و فعال شد.</span>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* ACTIVE DIRECTORY USERS & CATEGORY MANAGERS ASSIGNMENT TABLE */}
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-4 shadow-xs">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700 pb-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                      <h4 className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100">
+                        پرسنل سازمانی Active Directory و انتصاب مدیران دسته‌بندی‌ها
+                      </h4>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                        {toPersianDigits(users.length)} کاربر دایرکتوری
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      مشاهده اطلاعات حساب‌های کاربری ویندوز سرور و انتصاب مستقیم پرسنل به عنوان مدیر ناظر بر دسته‌بندی‌ها
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={handleSyncAD}
+                      disabled={isSyncingAD}
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition shadow-xs cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAD ? 'animate-spin' : ''}`} />
+                      <span>{isSyncingAD ? 'در حال همگام‌سازی...' : 'همگام‌سازی کاربران از AD'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {adSyncNotice && (
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2 animate-in fade-in">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{adSyncNotice}</span>
+                  </div>
+                )}
+
+                {adTabQuickAssignNotice && (
+                  <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 text-xs flex items-center gap-2 animate-in fade-in">
+                    <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span>{adTabQuickAssignNotice}</span>
+                  </div>
+                )}
+
+                {/* Filter and Search */}
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <div className="relative flex-1 w-full">
+                    <input
+                      type="text"
+                      value={adTabUserSearch}
+                      onChange={e => setAdTabUserSearch(e.target.value)}
+                      placeholder="جستجو در نام کاربر، نام کاربری دامین (sAMAccountName)، واحد سازمانی یا گروه AD..."
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 pr-9 text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                    />
+                    <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+                    {adTabUserSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setAdTabUserSearch('')}
+                        className="absolute left-3 top-2.5 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <select
+                    value={adTabRoleFilter}
+                    onChange={e => setAdTabRoleFilter(e.target.value as any)}
+                    className="w-full sm:w-48 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-100 outline-none font-medium"
+                  >
+                    <option value="ALL">همه نقش‌ها و کاربران ({toPersianDigits(users.length)})</option>
+                    <option value="CATEGORY_MANAGER">مدیران دسته‌ها ({toPersianDigits(users.filter(u => u.role === 'CATEGORY_MANAGER').length)})</option>
+                    <option value="SUPER_ADMIN">مدیران ارشد ({toPersianDigits(users.filter(u => u.role === 'SUPER_ADMIN').length)})</option>
+                    <option value="USER">کاربران عادی ({toPersianDigits(users.filter(u => u.role === 'USER').length)})</option>
+                  </select>
+                </div>
+
+                {/* AD Users Table */}
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="py-2.5 px-3">کاربر و واحد سازمانی</th>
+                        <th className="py-2.5 px-3">نام کاربری Active Directory</th>
+                        <th className="py-2.5 px-3">گروه‌های امنیتی دامین</th>
+                        <th className="py-2.5 px-3">نقش فعلی</th>
+                        <th className="py-2.5 px-3">دسته‌بندی تحت مدیریت</th>
+                        <th className="py-2.5 px-3 text-center">انتصاب / تغییر مدیریت دسته</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                      {users
+                        .filter(u => {
+                          if (adTabRoleFilter !== 'ALL' && u.role !== adTabRoleFilter) return false;
+                          if (!adTabUserSearch.trim()) return true;
+                          const q = adTabUserSearch.toLowerCase().trim();
+                          const inName = (u.displayName || '').toLowerCase().includes(q);
+                          const inUser = (u.username || '').toLowerCase().includes(q);
+                          const inDept = (u.department || '').toLowerCase().includes(q);
+                          const inGroups = (u.adGroups || []).some(g => g.toLowerCase().includes(q));
+                          return inName || inUser || inDept || inGroups;
+                        })
+                        .map(u => {
+                          const managed = categories.filter(c => c.managerId === u.id);
+                          return (
+                            <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                              <td className="py-2.5 px-3">
+                                <div className="flex items-center gap-2.5">
+                                  <img
+                                    src={typeof u.avatar === 'string' ? u.avatar : (u.avatar as any)?.url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
+                                    alt=""
+                                    className="w-8 h-8 rounded-full object-cover border border-slate-200 dark:border-slate-700"
+                                  />
+                                  <div>
+                                    <div className="font-bold text-slate-900 dark:text-slate-100">{u.displayName}</div>
+                                    <div className="text-[10px] text-slate-400">{u.department}</div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="py-2.5 px-3 font-mono text-slate-600 dark:text-slate-300 text-[11px]" dir="ltr">
+                                {u.username}
+                              </td>
+
+                              <td className="py-2.5 px-3">
+                                <div className="flex items-center gap-1 flex-wrap max-w-xs">
+                                  {(u.adGroups || []).slice(0, 3).map((g, i) => (
+                                    <span key={i} className="text-[9px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300 font-mono">
+                                      {g}
+                                    </span>
+                                  ))}
+                                  {(u.adGroups || []).length > 3 && (
+                                    <span className="text-[9px] text-slate-400">+{toPersianDigits((u.adGroups || []).length - 3)}</span>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="py-2.5 px-3">
+                                <span
+                                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                    u.role === 'SUPER_ADMIN'
+                                      ? 'bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200'
+                                      : u.role === 'CATEGORY_MANAGER'
+                                      ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200'
+                                      : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                  }`}
+                                >
+                                  {u.role === 'SUPER_ADMIN'
+                                    ? 'مدیر ارشد'
+                                    : u.role === 'CATEGORY_MANAGER'
+                                    ? 'مدیر دسته‌بندی'
+                                    : 'کاربر دامین'}
+                                </span>
+                              </td>
+
+                              <td className="py-2.5 px-3">
+                                {managed.length > 0 ? (
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {managed.map(c => (
+                                      <span
+                                        key={c.id}
+                                        className="text-[10px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md inline-flex items-center gap-1 border border-emerald-200 dark:border-emerald-800"
+                                      >
+                                        <span>{c.title}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            onSaveCategory({
+                                              id: c.id,
+                                              managerId: '',
+                                              managerName: 'تعیین نشده',
+                                              managerDepartment: '',
+                                            });
+                                            setAdTabQuickAssignNotice(`مدیریت دسته‌بندی «${c.title}» از کاربر «${u.displayName}» لغو شد.`);
+                                            setTimeout(() => setAdTabQuickAssignNotice(null), 3500);
+                                          }}
+                                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded p-0.5 transition cursor-pointer"
+                                          title="لغو مدیریت این دسته‌بندی"
+                                        >
+                                          <X className="w-2.5 h-2.5" />
+                                        </button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">فاقد دسته‌بندی</span>
+                                )}
+                              </td>
+
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <select
+                                    defaultValue=""
+                                    onChange={e => {
+                                      const targetCatId = e.target.value;
+                                      if (!targetCatId) return;
+                                      const targetCat = categories.find(c => c.id === targetCatId);
+                                      if (targetCat) {
+                                        onSaveCategory({
+                                          id: targetCat.id,
+                                          managerId: u.id,
+                                          managerName: u.displayName,
+                                          managerDepartment: u.department,
+                                        });
+                                        setAdTabQuickAssignNotice(
+                                          `کاربر «${u.displayName}» با موفقیت به عنوان مدیر دسته‌بندی «${targetCat.title}» تعیین شد.`
+                                        );
+                                        setTimeout(() => setAdTabQuickAssignNotice(null), 3500);
+                                      }
+                                      e.target.value = '';
+                                    }}
+                                    className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-rose-400 rounded-lg px-2 py-1 text-[11px] font-medium text-slate-800 dark:text-slate-200 outline-none cursor-pointer max-w-[160px] truncate"
+                                  >
+                                    <option value="">انتصاب به دسته‌بندی...</option>
+                                    {categories.map(c => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.title} {c.managerId === u.id ? '✓ (مدیر فعلی)' : c.managerId ? `(${c.managerName})` : '(بدون مدیر)'}
+                                      </option>
+                                    ))}
+                                  </select>
+
+                                  {onEditUserProfile && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onEditUserProfile(u)}
+                                      className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition border border-transparent hover:border-rose-200 dark:hover:border-rose-900/60"
+                                      title="ویرایش نقش و انتصاب چند دسته‌بندی به طور همزمان"
+                                    >
+                                      <UserCog className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
